@@ -1,115 +1,142 @@
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import MinMaxScaler
 import os
+from prophet import Prophet
+import logging
 
-def run_scoring_engine():
-    print("🚀 Uruchamiam Silnik Oceniający (Scoring Engine) na pliku KOLEGI...")
+# Wyłączamy logi Propheta (jest bardzo gadatliwy w konsoli)
+logging.getLogger('cmdstanpy').setLevel(logging.WARNING)
+logging.getLogger('prophet').setLevel(logging.WARNING)
+
+def run_forecaster_prophet():
+    print("🚀 Uruchamiam AI Forecaster (Prophet)...")
+    print("🔮 Cel: Wygenerowanie prognoz na 24 miesiące w przód.")
 
     # ==========================================
-    # 1. USTALANIE ŚCIEŻEK (Input)
+    # 1. USTALANIE ŚCIEŻEK
     # ==========================================
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
     
-    # ŚCIEŻKA DO PLIKU WEJŚCIOWEGO (MASTER_DATA.csv)
-    FILE_PATH = os.path.join(PROJECT_ROOT, 'data', 'processed', 'MASTER_DATA.csv')
-    
-    # ŚCIEŻKA DO PLIKU WYJŚCIOWEGO (predictions.csv)
-    OUTPUT_FILE_PATH = os.path.join(PROJECT_ROOT, 'data', 'processed', 'predictions.csv')
+    INPUT_FILE = os.path.join(PROJECT_ROOT, 'data', 'processed', 'MASTER_DATA.csv')
+    OUTPUT_FILE = os.path.join(PROJECT_ROOT, 'data', 'processed', 'predictions.csv')
 
     # ==========================================
-    # 2. KONFIGURACJA WAG
+    # 2. WCZYTANIE DANYCH HISTORYCZNYCH
     # ==========================================
-    WAGA_FINANSE = 0.4      # 40% (Profit_Margin)
-    WAGA_RYZYKO = 0.3       # 30% (Norm_Total_Risk)
-    WAGA_SENTYMENT = 0.3    # 30% (Google Trends)
-    
-    # ==========================================
-    # 3. WCZYTANIE PLIKU
-    # ==========================================
-    if not os.path.exists(FILE_PATH):
-        print(f"❌ BŁĄD KRYTYCZNY: Nie widzę pliku wejściowego: {FILE_PATH}")
-        print("👉 Upewnij się, że plik 'MASTER_DATA.csv' jest w folderze 'data/processed'!")
+    if not os.path.exists(INPUT_FILE):
+        print(f"❌ BŁĄD: Nie widzę pliku wejściowego: {INPUT_FILE}")
         return
 
-    print(f"📂 Wczytuję plik: {FILE_PATH}...")
-    df = pd.read_csv(FILE_PATH)
+    print(f"📂 Wczytuję historię z: {INPUT_FILE}...")
+    df = pd.read_csv(INPUT_FILE)
+
+    # Upewniamy się, że mamy kolumnę z Datą i Wynikiem
+    if 'Date' not in df.columns:
+        print("❌ BŁĄD: Brak kolumny 'Date' w pliku wejściowym! Prophet jej potrzebuje.")
+        print("Upewnij się, że kolega dostarczył plik z kolumną 'Date' (YYYY-MM-DD).")
+        return
     
-    # Próba odczytu separatora ';' w razie problemów (choć plik kolegi ma przecinki)
-    if len(df.columns) < 2:
-        df = pd.read_csv(FILE_PATH, sep=';') 
+    # Wybieramy co prognozować. Priorytet: PKO_SCORE_FINAL (jeśli kolega policzył), potem Profit_Margin
+    target_col = 'PKO_SCORE_FINAL' 
+    if target_col not in df.columns:
+        if 'Final_Score' in df.columns:
+            target_col = 'Final_Score'
+        elif 'Profit_Margin' in df.columns:
+            print("⚠️ Brak Final_Score, trenuję na Profit_Margin!")
+            target_col = 'Profit_Margin'
+        else:
+            print("❌ BŁĄD: Nie wiem co prognozować (brak kolumny z wynikiem).")
+            return
+
+    print(f"🎯 Trenuję model na kolumnie: {target_col}")
+
+    # Konwersja daty na format datetime
+    df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+    df = df.dropna(subset=['Date']) # Usuwamy wiersze bez daty
 
     # ==========================================
-    # 4. PRZYGOTOWANIE DANYCH (MAPPING)
+    # 3. TRENOWANIE MODELI (Pętla po branżach)
     # ==========================================
+    unique_industries = df['PKD_Code'].unique()
+    print(f"🏭 Znaleziono {len(unique_industries)} unikalnych branż.")
     
-    # Wyszukujemy kluczowe kolumny po fragmentach nazw
-    col_rentownosc = next((c for c in df.columns if 'profit_margin' in c.lower()), None)
-    col_upadlosci = next((c for c in df.columns if 'total_risk' in c.lower()), None)
-    col_sentyment = next((c for c in df.columns if 'google_trends' in c.lower()), None)
-    
-    # Upewnienie się, że kolumny są numeryczne i nie mają NaN
-    def ensure_numeric(col_name):
-        if col_name in df.columns:
-            return pd.to_numeric(df[col_name], errors='coerce').fillna(0)
-        return 0
+    all_forecasts = []
 
-    df['Profit_Margin'] = ensure_numeric(col_rentownosc)
-    df['Norm_Total_Risk'] = ensure_numeric(col_upadlosci)
-    df['Google_Trends'] = ensure_numeric(col_sentyment)
-
-    # ==========================================
-    # 5. OBLICZANIE PUNKTÓW (SCORING)
-    # ==========================================
-    scaler = MinMaxScaler(feature_range=(0, 100))
-
-    # A. Score Finanse (Profit_Margin)
-    # Normalizujemy marżę. Clipujemy wartości ekstremalne (-20% do 40%)
-    df['Score_Finanse'] = scaler.fit_transform(df[['Profit_Margin']].clip(-0.2, 0.4))
-
-    # B. Score Sentyment (Google Trends)
-    df['Score_Sentyment'] = scaler.fit_transform(df[['Google_Trends']])
-
-    # C. Score Ryzyko (Norm_Total_Risk)
-    # Robimy inwersję (100 - wynik), bo większe ryzyko to gorszy wynik
-    df['Score_Ryzyko'] = 100 - scaler.fit_transform(df[['Norm_Total_Risk']])
-
-    # 6. FINALNY INDEKS (Ważona suma)
-    df['Final_Score'] = (
-        WAGA_FINANSE * df['Score_Finanse'] +
-        WAGA_RYZYKO * df['Score_Ryzyko'] +
-        WAGA_SENTYMENT * df['Score_Sentyment']
-    )
-    
-    df['Final_Score'] = df['Final_Score'].round(1)
-
-    # ==========================================
-    # 7. KLASYFIKACJA I ZAPIS
-    # ==========================================
-    def assign_class(score):
-        if score >= 70: return "Lider Rozwoju 🚀"
-        if score >= 40: return "Stabilna ⚖️"
-        return "Zagrożona ⚠️"
-
-    df['Klasa'] = df['Final_Score'].apply(assign_class)
-    df = df.sort_values(by='Final_Score', ascending=False)
-
-    # --- ZAPIS DO NOWEGO PLIKU ---
-    # Upewniamy się, że folder istnieje (mimo że istniał dla pliku wejściowego)
-    output_dir = os.path.dirname(OUTPUT_FILE_PATH)
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    for pkd in unique_industries:
+        # 1. Filtrujemy dane dla jednej branży
+        group = df[df['PKD_Code'] == pkd].copy()
         
-    df.to_csv(OUTPUT_FILE_PATH, index=False)
-    
-    print("\n" + "="*70)
-    print(f"🏆 SUKCES! Wynik (Final Score) zapisano do: {OUTPUT_FILE_PATH}")
-    print("======================================================================")
-    
-    # Pokazujemy podgląd dla Frontendowca
-    cols_to_show = ['PKD_Code', 'Date', 'Final_Score', 'Klasa', 'Profit_Margin']
-    print(df[cols_to_show].head(5))
+        # Sortujemy chronologicznie
+        group = group.sort_values('Date')
+
+        # Prophet wymaga minimum 2 punktów danych, ale dla sensownej prognozy lepiej mieć więcej
+        if len(group) < 5:
+            # print(f"⚠️ Pomijam branżę {pkd} (za mało danych: {len(group)})")
+            continue
+
+        # 2. Formatowanie pod Prophet (wymaga kolumn 'ds' i 'y')
+        prophet_df = group[['Date', target_col]].rename(columns={'Date': 'ds', target_col: 'y'})
+
+        # 3. Inicjalizacja i trening modelu
+        # yearly_seasonality=True -> wykrywa, że np. w grudniu budowlanka spada
+        m = Prophet(yearly_seasonality=True, daily_seasonality=False, weekly_seasonality=False)
+        
+        try:
+            m.fit(prophet_df)
+        except Exception as e:
+            print(f"❌ Błąd treningu dla PKD {pkd}: {e}")
+            continue
+
+        # 4. Generowanie przyszłych dat (24 miesiące)
+        future = m.make_future_dataframe(periods=24, freq='M')
+        
+        # 5. Predykcja
+        forecast = m.predict(future)
+
+        # 6. Czyszczenie wyników
+        # Zostawiamy tylko kolumny: Data, Prognoza, Dolna granica, Górna granica
+        result = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].copy()
+        
+        # Filtrujemy tylko przyszłość (to co jest po ostatniej znanej dacie historycznej)
+        last_history_date = prophet_df['ds'].max()
+        future_result = result[result['ds'] > last_history_date].copy()
+
+        # Dodajemy z powrotem kod PKD
+        future_result['PKD_Code'] = pkd
+        
+        # Opcjonalnie: Clipujemy wynik, żeby nie wyszedł np. 150/100 albo ujemny
+        future_result['yhat'] = future_result['yhat'].clip(0, 100)
+
+        all_forecasts.append(future_result)
+
+    # ==========================================
+    # 4. ZAPIS WYNIKÓW
+    # ==========================================
+    if all_forecasts:
+        final_df = pd.concat(all_forecasts, ignore_index=True)
+        
+        # Zmieniamy nazwy na czytelne dla Frontendu
+        final_df = final_df.rename(columns={
+            'ds': 'Date',
+            'yhat': 'Predicted_Score',
+            'yhat_lower': 'Confidence_Lower',
+            'yhat_upper': 'Confidence_Upper'
+        })
+
+        # Zapis do CSV
+        final_df.to_csv(OUTPUT_FILE, index=False)
+        
+        print("\n" + "="*60)
+        print(f"🏆 SUKCES! Wygenerowano prognozy dla {len(unique_industries)} branż.")
+        print(f"📅 Horyzont: 24 miesiące.")
+        print(f"💾 Plik zapisany: {OUTPUT_FILE}")
+        print("="*60)
+        print("Przykładowe prognozy:")
+        print(final_df.head())
+        
+    else:
+        print("⚠️ Nie udało się wygenerować żadnych prognoz (sprawdź dane wejściowe).")
 
 if __name__ == "__main__":
-    run_scoring_engine()
+    run_forecaster_prophet()
