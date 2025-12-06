@@ -8,52 +8,52 @@ from datetime import datetime
 
 PKD_KEYWORDS_MAP = {
     # --- SEKTORY PRODUKCYJNE ---
-    # Rolnictwo: koszty (nawozy) i przychody (pszenica/zboże)
-    "PKD_01": "nawozy + cena pszenicy + skup zbóż + dopłaty bezpośrednie",
+    # Rolnictwo
+    "PKD_01": "pszenica cena + rzepak cena + nawozy + mleko skup + ciągnik rolniczy",
     
-    # Spożywka: podstawowe produkty (masło/cukier) + hasła drożyzny
-    "PKD_10": "cena masła + cena cukru + mąka + ceny żywności",
+    # Spożywcza
+    "PKD_10": "cena masła + cukier cena + mąka + ceny żywności + olej rzepakowy",
     
-    # Drewno: surowiec (tarcica) + opał (pellet/drewno)
-    "PKD_16": "drewno cena + tarcica + tartak + pellet + więźba dachowa",
+    # Drewno
+    "PKD_16": "pellet cena + drewno opałowe + tarcica + tartak + więźba dachowa",
     
-    # Materiały budowlane: beton/cement (baza) + wykończeniówka (płytki/okna)
-    "PKD_23": "cement cena + beton + styropian + cegła + pustak",
+    # Materiały budowlane
+    "PKD_23": "cement cena + beton towarowy + pustak + kostka brukowa + styropian",
     
-    # Metale: stal (pręty) + surowce wtórne (złom)
-    "PKD_24": "stal cena + złom + pręty zbrojeniowe + aluminium cena",
+    # Metale
+    "PKD_24": "cena złomu + cena stali + pręty zbrojeniowe + miedź cena + aluminium",
     
-    # Automotive: kupno auta + naprawy (części)
-    "PKD_29": "salon samochodowy + toyota + skoda + mechanik + części samochodowe",
+    # Automotive
+    "PKD_29": "nowe samochody + części samochodowe + mechanik + opony + produkcja aut",
     
-    # Meble: ogólne + konkretne (kuchnie/sofy)
-    "PKD_31": "meble + kuchnia + szafa + ikea + agata meble",
+    # Meble
+    "PKD_31": "meble kuchenne + szafa na wymiar + sofa + ikea + meble biurowe",
     
-    # Energetyka: rachunki (prąd/gaz) + inwestycje (fotowoltaika)
-    "PKD_35": "cena prądu + taryfa g11 +pgnig + fotowoltaika + pompa ciepła",
+    # Energetyka
+    "PKD_35": "cena prądu + taryfa prąd + gaz cena + fotowoltaika + pompa ciepła",
 
     # --- BUDOWNICTWO I NIERUCHOMOŚCI ---
-    # Budowlanka: plany (projekt) + finanse (kredyt) + wykonanie (budowa)
-    "PKD_41": "budowa domu + projekt domu + kredyt hipoteczny + pozwolenie na budowę",
+    # Budowlanka
+    "PKD_41": "budowa domu + kredyt hipoteczny + deweloper + stan deweloperski + pozwolenie na budowę",
     
-    # Nieruchomości: rynek wtórny (otodom/olx) + ceny + notariusz
-    "PKD_68": "mieszkania na sprzedaż + wynajem + ceny mieszkań + otodom",
+    # Nieruchomości
+    "PKD_68": "mieszkania na sprzedaż + wynajem mieszkań + ceny mieszkań + notariusz + rynek wtórny",
 
     # --- USŁUGI I LOGISTYKA ---
-    # Hurt: typowe hasła biznesowe
-    "PKD_46": "hurtownia + palety + zaopatrzenie + dystrybucja",
+    # Hurt
+    "PKD_46": "hurtownia + palety + zaopatrzenie + dystrybutor + faktura vat",
     
-    # Detal: zakupy codzienne + promocje
-    "PKD_47": "gazetka promocyjna + biedronka + lidl + wyprzedaż + galeria handlowa",
+    # Detal
+    "PKD_47": "promocje + gazetka + biedronka + lidl + wyprzedaż",
     
-    # Transport: koszty (paliwo) + zlecenia
-    "PKD_49": "cena paliwa + olej napędowy + giełda transportowa + trans + spedycja",
+    # Transport
+    "PKD_49": "cena paliwa + diesel + giełda transportowa + spedycja + transport ciężarowy",
     
-    # Turystyka: wczasy + hotele (booking)
-    "PKD_55": "wakacje + hotel + noclegi + booking + biuro podróży",
+    # Turystyka
+    "PKD_55": "wakacje + noclegi + booking + hotel + ferie",
     
-    # IT: praca (najlepszy wskaźnik kondycji sektora) + nauka
-    "PKD_62": "praca it + programista + kurs java + python + bootcamps"
+    # IT
+    "PKD_62": "praca it + programista + kurs python + strony www + b2b it"
 }
 
 OUTPUT_DIR = "Hacknation/data/processed"
@@ -118,40 +118,48 @@ def fetch_macro_data():
     return macro_df
 
 def main():
-    # 1. Stwórz katalog jeśli nie istnieje
+    # --- POPRAWKA: Deklaracja global musi być na samym początku ---
+    global OUTPUT_FILE, OUTPUT_DIR 
+    
+    print(f"Zapisuję dane do: {OUTPUT_DIR}")
+    
+    # Próba utworzenia katalogu, z fallbackiem
     if not os.path.exists(OUTPUT_DIR):
-        os.makedirs(OUTPUT_DIR)
+        try:
+            os.makedirs(OUTPUT_DIR)
+        except OSError:
+            print("Nie mogę utworzyć folderu w podanej ścieżce. Zapiszę w bieżącym katalogu.")
+            OUTPUT_DIR = "."
+            OUTPUT_FILE = "soft_data.csv"
 
-    # 2. Pobierz dane
     trends_df = fetch_google_trends()
     macro_df = fetch_macro_data()
 
     if trends_df.empty:
-        print("Błąd: Nie udało się pobrać trendów. Sprawdź połączenie z internetem.")
+        print("Błąd: Nie udało się pobrać trendów.")
         return
 
-    # 3. Łączenie danych (Merge)
-    print("\n--- 3. Łączenie danych i zapis ---")
-    
-    # Sortowanie po dacie
+    print("\n--- 3. Łączenie danych ---")
     trends_df = trends_df.sort_values('Data')
-    macro_df = macro_df.sort_values('Data')
+    
+    if not macro_df.empty and 'Data' in macro_df.columns:
+        macro_df = macro_df.sort_values('Data')
+        final_df = pd.merge_asof(trends_df, macro_df, on='Data', direction='nearest')
+    else:
+        print("Ostrzeżenie: Brak danych makro. Używam domyślnych.")
+        final_df = trends_df
+        final_df['WIBOR'] = 5.85
+        final_df['Cena_Paliwa'] = 80.0
 
-    # Używamy merge_asof, aby dopasować tygodniowe dane z Trends do tygodniowych z Yahoo
-    # (nawet jeśli dni tygodnia się minimalnie różnią)
-    final_df = pd.merge_asof(trends_df, macro_df, on='Data', direction='nearest')
-
-    # Selekcja kolumn zgodnie z wymaganiem: 
-    # Data | Kod_PKD | Google_Trend_Score | WIBOR | Cena_Paliwa
-    final_cols = ['Data', 'Kod_PKD', 'Google_Trend_Score', 'WIBOR', 'Cena_Paliwa']
+    wanted_cols = ['Data', 'Kod_PKD', 'Google_Trend_Score', 'WIBOR', 'Cena_Paliwa']
+    final_cols = [c for c in wanted_cols if c in final_df.columns]
     final_df = final_df[final_cols]
 
-    # Zapis
-    output_path = os.path.join(OUTPUT_DIR, OUTPUT_FILE)
-    final_df.to_csv(output_path, index=False)
+    full_path = os.path.join(OUTPUT_DIR, OUTPUT_FILE)
+    final_df.to_csv(full_path, index=False)
     
-    print(f"SUKCES! Plik został zapisany w: {output_path}")
- 
+    print(f"SUKCES! Plik gotowy: {full_path}")
+    print(final_df.head())
 
 if __name__ == "__main__":
     main()
