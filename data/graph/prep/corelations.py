@@ -90,4 +90,4 @@ if graph:
     if first_key in graph:
         print(f"--- Top Dependencies for {first_key} (Normalized %) ---")
         for pct, supplier in graph[first_key]:
-            print(f"Supplier {supplier}: {pct:.2f}%")
+            print(f"Supplier {supplier}: {pct:}%")
