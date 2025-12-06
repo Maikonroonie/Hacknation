@@ -1,4 +1,5 @@
 import csv
+import os  # <--- 1. Dodano bibliotekę os
 
 # List of industries to keep (Exact match required)
 KEY_INDUSTRIES = [
@@ -54,6 +55,7 @@ def parse_csv_data(file_path):
                         try:
                             weight = float(values[col_idx].replace(',', '.').strip())
                             if weight > 0:
+                                # Raw extraction: (Weight, Supplier) - temporary used for sorting
                                 dependency_dict[buyer_pkd].append((weight, supplier_pkd))
                         except ValueError: pass
 
@@ -67,27 +69,33 @@ def parse_csv_data(file_path):
         print(f"Error: File '{file_path}' not found.")
         return {}
 
+# --- GLÓWNA CZĘŚĆ KODU ---
 
-file_name = 'connections.csv' 
+# 2. Naprawa ścieżki do pliku (zawsze szuka obok skryptu)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+file_name = os.path.join(script_dir, 'connections.csv')
+
 graph = parse_csv_data(file_name)
 
 if graph:
     for industry in graph:
+        # industry to teraz DOSTAWCA
         total_weight = sum(weight for weight, _ in graph[industry])
         
         if total_weight > 0:
             normalized_list = []
-            for weight, supplier in graph[industry]:
-                # Calculate percentage
+            for weight, client in graph[industry]: # client zamiast supplier
                 percentage = (weight / total_weight) * 100
-                normalized_list.append((percentage, supplier))
+                
+                # Pamiętaj o kolejności dla BFS: (NAZWA, WAGA) lub (WAGA, NAZWA)
+                # Skoro naprawiliśmy BFS, trzymajmy się (NAZWA, WAGA/PROCENT)
+                normalized_list.append((client, percentage)) 
             
-            # Update the dictionary with normalized values
             graph[industry] = normalized_list
 
-    # Print Example for check
-    first_key = KEY_INDUSTRIES[0] # check '01'
+    # Print Example
+    first_key = '35' # Sprawdźmy Energetykę
     if first_key in graph:
-        print(f"--- Top Dependencies for {first_key} (Normalized %) ---")
-        for pct, supplier in graph[first_key]:
-            print(f"Supplier {supplier}: {pct:}%")
+        print(f"--- Kogo zasila branża {first_key}? (Impact Downstream) ---")
+        for client, pct in graph[first_key]:
+            print(f"Impacts Client {client}: {pct:.2f}%")
