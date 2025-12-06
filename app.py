@@ -2,15 +2,16 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import numpy as np
 
 # --- 1. KONFIGURACJA STRONY ---
 st.set_page_config(
-    page_title="Indeks Branż PKO BP",
+    page_title="Indeks Branż PKO BP | AI Forecast",
     page_icon="🏦",
     layout="wide"
 )
 
-# --- 2. STAŁE I SŁOWNIKI ---
+# --- 2. SŁOWNIK BRANŻ ---
 BRANZE_MAPA = {
     1: "Rolnictwo (01)",
     10: "Produkcja Żywności (10)",
@@ -29,145 +30,282 @@ BRANZE_MAPA = {
     68: "Obsługa Nieruchomości (68)"
 }
 
-# --- 3. FUNKCJE POMOCNICZE (BACKEND) ---
+# Funkcja pomocnicza do oceny (używana dla obu zbiorów danych)
+def ocen_klase(score):
+    if pd.isna(score): return "Brak Danych ⚪"
+    if score >= 80: return "Lider Rozwoju 🚀"
+    if score >= 60: return "Stabilna ⚖️"
+    if score >= 40: return "Obserwuj 🟡"
+    return "Zagrożona ⚠️"
+
+# --- 3. ŁADOWANIE DANYCH (WERSJA PANCERNA V2) ---
 @st.cache_data
 def load_data():
+    master = pd.DataFrame()
+    preds = pd.DataFrame()
+
+    # --- A. Wczytanie Historii (MASTER_DATA) ---
     try:
-        df = pd.read_csv("data/processed/MASTER_DATA.csv")
-        df['Date'] = pd.to_datetime(df['Date'])
-        # Dodajemy kolumnę z nazwą branży dla czytelności
-        df['Branża'] = df['PKD_Code'].map(BRANZE_MAPA)
-        return df
-    except FileNotFoundError:
-        return pd.DataFrame()
-
-def get_risk_grade(score):
-    if score >= 80: return "A (Bardzo Bezpieczna)", "🟢"
-    if score >= 60: return "B (Stabilna)", "🔵"
-    if score >= 40: return "C (Podwyższone Ryzyko)", "🟡"
-    return "D (Zagrożona)", "🔴"
-
-# --- 4. WIDOK 1: RANKING (NOWOŚĆ!) ---
-def render_ranking(df):
-    st.header("🏆 Ranking Kondycji Branż (Toplist)")
-    st.markdown("Zestawienie sektorów wg `PKO Index Score` na podstawie najnowszych danych.")
-    
-    # 1. Bierzemy tylko najnowszy miesiąc dla każdej branży
-    latest_date = df['Date'].max()
-    df_latest = df[df['Date'] == latest_date].copy()
-    
-    # 2. Sortujemy od najlepszej
-    df_ranked = df_latest.sort_values(by="PKO_SCORE_FINAL", ascending=False).reset_index(drop=True)
-    df_ranked['Pozycja'] = df_ranked.index + 1
-    
-    # --- TOP 3 KAFELKI ---
-    col1, col2, col3 = st.columns(3)
-    if len(df_ranked) >= 3:
-        with col1:
-            st.info(f"🥇 Lider Rynku: **{df_ranked.iloc[0]['Branża']}**\n\nScore: {df_ranked.iloc[0]['PKO_SCORE_FINAL']:.1f}")
-        with col2:
-            st.success(f"🥈 Wicelider: **{df_ranked.iloc[1]['Branża']}**\n\nScore: {df_ranked.iloc[1]['PKO_SCORE_FINAL']:.1f}")
-        with col3:
-            st.warning(f"🥉 Trzecie miejsce: **{df_ranked.iloc[2]['Branża']}**\n\nScore: {df_ranked.iloc[2]['PKO_SCORE_FINAL']:.1f}")
-
-    # --- WYKRES SŁUPKOWY ---
-    st.subheader("📊 Porównanie Branż")
-    fig = px.bar(
-        df_ranked, 
-        x="PKO_SCORE_FINAL", 
-        y="Branża", 
-        orientation='h',
-        color="PKO_SCORE_FINAL",
-        color_continuous_scale="RdYlGn", # Czerwony -> Zielony
-        text_auto='.1f'
-    )
-    fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=500)
-    st.plotly_chart(fig, use_container_width=True)
-
-    # --- TABELA SZCZEGÓŁOWA ---
-    st.subheader("📋 Tabela Wyników")
-    # Wybieramy tylko ważne kolumny do wyświetlenia
-    display_cols = ['Branża', 'PKO_SCORE_FINAL', 'Rev_Growth_YoY', 'Profit_Margin', 'Google_Trends', 'Bankruptcy_Rate']
-    
-    st.dataframe(
-        df_ranked[display_cols],
-        column_config={
-            "PKO_SCORE_FINAL": st.column_config.ProgressColumn(
-                "PKO Score",
-                help="Wynik algorytmu (0-100)",
-                format="%.1f",
-                min_value=0,
-                max_value=100,
-            ),
-            "Rev_Growth_YoY": st.column_config.NumberColumn("Wzrost Przych. %", format="%.1f%%"),
-            "Profit_Margin": st.column_config.NumberColumn("Marża %", format="%.2f"),
-        },
-        hide_index=True,
-        use_container_width=True
-    )
-
-# --- 5. WIDOK 2: SZCZEGÓŁY (TO CO MIAŁEŚ WCZEŚNIEJ) ---
-def render_details(df):
-    st.header("🔍 Analiza Szczegółowa Sektora")
-    
-    # Sidebar lokalny dla tego widoku
-    opcje_nazwy = list(BRANZE_MAPA.values())
-    wybrana_nazwa = st.selectbox("Wybierz sektor do prześwietlenia:", opcje_nazwy)
-    wybrany_kod = [k for k, v in BRANZE_MAPA.items() if v == wybrana_nazwa][0]
-    
-    df_sector = df[df['PKD_Code'] == wybrany_kod].sort_values('Date')
-    latest = df_sector.iloc[-1]
-    prev = df_sector.iloc[-2]
-    
-    # KPI
-    c1, c2, c3, c4 = st.columns(4)
-    score = latest['PKO_SCORE_FINAL']
-    grade, icon = get_risk_grade(score)
-    
-    c1.metric("Indeks PKO", f"{score:.1f}", f"{score - prev['PKO_SCORE_FINAL']:.1f}")
-    c2.metric("Ocena Ryzyka", grade, icon)
-    c3.metric("Wzrost Przych. r/r", f"{latest['Rev_Growth_YoY']:.1f}%")
-    c4.metric("Marża Zysku", f"{(latest['Profit_Margin']*100):.1f}%") # Poprawka na procenty
-    
-    # Wykresy (Radar + Historia)
-    c_left, c_right = st.columns([1, 2])
-    
-    with c_left:
-        categories = ['Rentowność', 'Wzrost', 'Sentyment (Google)', 'Bezpieczeństwo']
-        values = [latest['Norm_Profit_Margin'], latest['Norm_Rev_Growth_YoY'], latest['Norm_Google_Trends'], latest['Norm_Bankruptcy_Rate']]
-        fig_radar = go.Figure(data=go.Scatterpolar(r=values, theta=categories, fill='toself', marker_color='#00305F'))
-        fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 100])), height=350, margin=dict(t=20, b=20))
-        st.plotly_chart(fig_radar, use_container_width=True)
+        master = pd.read_csv("data/processed/MASTER_DATA.csv")
+        master['Date'] = pd.to_datetime(master['Date'])
         
-    with c_right:
-        fig_line = px.line(df_sector, x='Date', y='PKO_SCORE_FINAL', title='Historia Kondycji Branży')
-        fig_line.add_hline(y=50, line_dash="dash", line_color="red")
-        fig_line.update_traces(line_color='#00305F', line_width=3)
-        st.plotly_chart(fig_line, use_container_width=True)
+        # 1. Mapowanie Nazw
+        if 'PKD_Code' in master.columns:
+            master['Branża'] = master['PKD_Code'].map(BRANZE_MAPA)
+        
+        # 2. Naprawa kolumny Final_Score
+        if 'PKO_SCORE_FINAL' in master.columns:
+            master['Final_Score'] = master['PKO_SCORE_FINAL']
+        elif 'Final_Score' not in master.columns:
+            master['Final_Score'] = 50.0 # Awaryjnie
 
-# --- 6. MAIN (ROUTER) ---
-def main():
-    df = load_data()
+        # 3. WYMUSZENIE KOLUMNY 'KLASA' (To naprawia Twój błąd!)
+        master['Klasa'] = master['Final_Score'].apply(ocen_klase)
+
+        # 4. Uzupełnienie brakujących kolumn składowych (jeśli ich nie ma w CSV)
+        cols_missing = ['Score_Finanse', 'Score_Sentyment', 'Score_Ryzyko']
+        for col in cols_missing:
+            if col not in master.columns:
+                master[col] = master['Final_Score'] # Domyślnie równe średniej, żeby wykres działał
+
+        master['Typ'] = 'Historia'
+        
+    except Exception as e:
+        st.error(f"⚠️ Problem z plikiem historycznym: {e}")
+
+    # --- B. Wczytanie Predykcji (predictions.csv) ---
+    try:
+        preds = pd.read_csv("data/processed/predictions.csv")
+        preds['Date'] = pd.to_datetime(preds['Date'])
+        
+        if 'PKD_Code' in preds.columns:
+            preds['Branża'] = preds['PKD_Code'].map(BRANZE_MAPA)
+        
+        # Mapowanie Score
+        if 'Predicted_Score' in preds.columns:
+            preds['Final_Score'] = preds['Predicted_Score']
+        elif 'Final_Score' not in preds.columns:
+            preds['Final_Score'] = 50.0
+
+        # Generowanie Klasy dla predykcji
+        preds['Klasa'] = preds['Final_Score'].apply(ocen_klase)
+        
+        # Uzupełnienie składowych dla predykcji
+        for col in ['Score_Finanse', 'Score_Sentyment', 'Score_Ryzyko']:
+            if col not in preds.columns:
+                preds[col] = preds['Final_Score']
+
+        preds['Typ'] = 'Prognoza'
+
+    except Exception as e:
+        st.warning(f"⚠️ Brak pliku predykcji lub błąd formatu: {e}")
+
+    return master, preds
+
+# Ładujemy dane globalnie
+master, preds = load_data()
+
+# --- 4. WIDOK: RANKING (MASZYNA CZASU) ---
+def render_ranking():
+    st.header("🏆 Ranking Kondycji Branż")
     
-    if df.empty:
-        st.error("Brak danych! Upewnij się, że plik MASTER_DATA.csv istnieje.")
+    if master.empty and preds.empty:
+        st.error("Brak danych do wyświetlenia.")
         return
 
-    # Sidebar - Globalna Nawigacja
-    with st.sidebar:
-        # Zamiast obrazka, dajemy ładny nagłówek. To się nie zepsuje.
-        st.header("🏦 PKO Bank Polski")
-        st.write("---")
-        # To jest Twój Navbar
-        page = st.radio("Nawigacja", ["🏆 Ranking Liderów", "📊 Analiza Szczegółowa"], index=0)
-        st.write("---")
-        st.caption("HackNation v1.0")
+    # 1. Tworzymy wspólną listę dat
+    dates_m = master['Date'] if not master.empty else pd.Series(dtype='datetime64[ns]')
+    dates_p = preds['Date'] if not preds.empty else pd.Series(dtype='datetime64[ns]')
+    
+    all_dates = pd.concat([dates_m, dates_p]).dropna().unique()
+    all_dates_sorted = sorted(all_dates, reverse=True)
+    
+    date_options = [pd.to_datetime(d).strftime('%Y-%m-%d') for d in all_dates_sorted]
+    
+    # Domyślna data: Ostatnia data historyczna (żeby pokazać "TERAZ")
+    default_idx = 0
+    if not master.empty:
+        last_hist = master['Date'].max().strftime('%Y-%m-%d')
+        if last_hist in date_options:
+            default_idx = date_options.index(last_hist)
 
-    # Routing - Wybór widoku
+    # UI
+    col_sel, col_info = st.columns([1, 3])
+    with col_sel:
+        sel_date_str = st.selectbox("📅 Wybierz moment w czasie:", date_options, index=default_idx)
+    
+    sel_date = pd.to_datetime(sel_date_str)
+    
+    # Decyzja: Historia czy Prognoza?
+    max_hist = master['Date'].max() if not master.empty else pd.Timestamp.min
+    is_forecast = sel_date > max_hist
+    
+    # Wybór odpowiedniego DataFrame
+    if is_forecast:
+        df_rank = preds[preds['Date'] == sel_date].copy()
+        msg_type = "🔮 TRYB PROGNOZY (AI)"
+        msg_color = "blue"
+    else:
+        df_rank = master[master['Date'] == sel_date].copy()
+        msg_type = "📜 TRYB HISTORYCZNY"
+        msg_color = "green"
+        
+    with col_info:
+        if is_forecast:
+            st.info(f"**{msg_type}:** Analizujesz przewidywania na dzień {sel_date_str}.")
+        else:
+            st.success(f"**{msg_type}:** Analizujesz twarde dane z dnia {sel_date_str}.")
+
+    if df_rank.empty:
+        st.warning("Brak danych dla wybranej daty.")
+        return
+
+    # Sortowanie
+    df_rank = df_rank.sort_values(by="Final_Score", ascending=False).reset_index(drop=True)
+
+    # Kafelki TOP 3
+    c1, c2, c3 = st.columns(3)
+    if len(df_rank) >= 3:
+        with c1: st.success(f"🥇 **{df_rank.iloc[0]['Branża']}**\n\nScore: {df_rank.iloc[0]['Final_Score']:.1f}")
+        with c2: st.info(f"🥈 **{df_rank.iloc[1]['Branża']}**\n\nScore: {df_rank.iloc[1]['Final_Score']:.1f}")
+        with c3: st.warning(f"🥉 **{df_rank.iloc[2]['Branża']}**\n\nScore: {df_rank.iloc[2]['Final_Score']:.1f}")
+
+    # Wykres
+    st.markdown("### 📊 Porównanie Branż")
+    
+    # Paleta kolorów dla Klasy
+    color_map = {
+        "Lider Rozwoju 🚀": "#00CC00",
+        "Stabilna ⚖️": "#00305F",
+        "Obserwuj 🟡": "#FFC107",
+        "Zagrożona ⚠️": "#FF4B4B"
+    }
+    
+    fig = px.bar(
+        df_rank, 
+        x="Final_Score", 
+        y="Branża", 
+        orientation='h',
+        color="Klasa", # Teraz ta kolumna na pewno istnieje!
+        text_auto='.1f',
+        color_discrete_map=color_map
+    )
+    fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=600)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Tabela
+    with st.expander("Szczegółowa tabela"):
+        st.dataframe(df_rank, use_container_width=True)
+
+# --- 5. WIDOK: SZCZEGÓŁY (WYKRESY HYBRYDOWE) ---
+def render_details():
+    st.header("📈 Centrum Analityczne")
+    
+    opts = list(BRANZE_MAPA.values())
+    sel = st.selectbox("Wybierz sektor:", opts)
+    pkd = [k for k, v in BRANZE_MAPA.items() if v == sel][0]
+    
+    # Filtrowanie
+    d_m = master[master['PKD_Code'] == pkd].sort_values('Date') if not master.empty else pd.DataFrame()
+    d_p = preds[preds['PKD_Code'] == pkd].sort_values('Date') if not preds.empty else pd.DataFrame()
+    
+    # Ostatni punkt historii
+    last_hist_row = d_m.iloc[-1] if not d_m.empty else None
+    
+    # KPI
+    k1, k2, k3, k4 = st.columns(4)
+    curr = last_hist_row['Final_Score'] if last_hist_row is not None else 0
+    fut = d_p.iloc[-1]['Final_Score'] if not d_p.empty else 0
+    
+    k1.metric("Aktualny Wynik", f"{curr:.1f}")
+    k2.metric("Prognoza (2026)", f"{fut:.1f}", delta=f"{fut-curr:.1f}")
+    
+    # --- WYKRES LINIOWY (HYBRYDOWY) ---
+    c_main, c_radar = st.columns([2, 1])
+    
+    with c_main:
+        st.markdown("#### 📅 Historia i Prognoza AI")
+        fig = go.Figure()
+        
+        # 1. Historia
+        if not d_m.empty:
+            fig.add_trace(go.Scatter(
+                x=d_m['Date'], y=d_m['Final_Score'],
+                mode='lines', name='Historia',
+                line=dict(color='#00305F', width=4)
+            ))
+            
+        # 2. Prognoza (łączona)
+        if not d_p.empty and last_hist_row is not None:
+            # Tworzymy linię, która zaczyna się od ostatniego punktu historii
+            # Żeby nie było dziury na wykresie
+            p_dates = [last_hist_row['Date']] + d_p['Date'].tolist()
+            p_scores = [last_hist_row['Final_Score']] + d_p['Final_Score'].tolist()
+            
+            fig.add_trace(go.Scatter(
+                x=p_dates, y=p_scores,
+                mode='lines', name='Prognoza AI',
+                line=dict(color='#FF4B4B', width=3, dash='dot')
+            ))
+            
+            # Przedział ufności (jeśli dostępny)
+            if 'Confidence_Upper' in d_p.columns:
+                # Dodajemy punkt startowy do przedziału ufności też (jako punkt zero uncertainty)
+                upper = [last_hist_row['Final_Score']] + d_p['Confidence_Upper'].tolist()
+                lower = [last_hist_row['Final_Score']] + d_p['Confidence_Lower'].tolist()
+                
+                fig.add_trace(go.Scatter(
+                    x=p_dates + p_dates[::-1], # x tam i z powrotem
+                    y=upper + lower[::-1],     # y góra i dół
+                    fill='toself',
+                    fillcolor='rgba(255, 75, 75, 0.15)',
+                    line=dict(color='rgba(255,255,255,0)'),
+                    name='Przedział ufności (95%)',
+                    showlegend=True
+                ))
+
+        fig.add_hline(y=50, line_dash="dash", line_color="gray")
+        fig.update_layout(height=450, margin=dict(l=20,r=20,t=40,b=20), hovermode="x unified")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # --- RADAR ---
+    with c_radar:
+        st.markdown("#### 🕸️ Składowe Oceny")
+        # Używamy danych z ostatniego punktu historii lub predykcji
+        target_row = last_hist_row if not d_m.empty else (d_p.iloc[0] if not d_p.empty else None)
+        
+        if target_row is not None:
+            cats = ['Finanse', 'Ryzyko (Niskie)', 'Sentyment']
+            # Pobieramy wartości bezpiecznie (z domyślnym 50 jak brak)
+            val_fin = target_row.get('Score_Finanse', target_row['Final_Score'])
+            val_risk = target_row.get('Score_Ryzyko', target_row['Final_Score'])
+            val_sent = target_row.get('Score_Sentyment', target_row['Final_Score'])
+            
+            vals = [val_fin, val_risk, val_sent]
+            
+            fig_r = go.Figure(data=go.Scatterpolar(
+                r=vals, theta=cats, fill='toself', marker_color='#00305F'
+            ))
+            fig_r.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                height=350, margin=dict(t=40, b=40)
+            )
+            st.plotly_chart(fig_r, use_container_width=True)
+        else:
+            st.info("Brak danych do wykresu radarowego.")
+
+# --- 6. MAIN ---
+def main():
+    with st.sidebar:
+        st.header("🏦 PKO Bank Polski")
+        st.caption("System Analizy Branżowej v3.0")
+        st.write("---")
+        page = st.radio("Nawigacja", ["🏆 Ranking Liderów", "📊 Analiza Szczegółowa"])
+        
     if page == "🏆 Ranking Liderów":
-        render_ranking(df)
+        render_ranking()
     elif page == "📊 Analiza Szczegółowa":
-        render_details(df)
+        render_details()
 
 if __name__ == "__main__":
     main()
