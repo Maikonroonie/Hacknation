@@ -4,143 +4,189 @@ from sklearn.preprocessing import MinMaxScaler
 import os
 
 # --- KONFIGURACJA ---
-# Ustaw na False, gdy koledzy dostarczą prawdziwe pliki csv do folderu data/processed/
-USE_MOCK_DATA = True 
+# Ustaw na False, bo masz już plik hard_data.csv!
+USE_MOCK_DATA = False 
 
-# Ścieżki (zakładając, że uruchamiasz skrypt z głównego katalogu projektu)
+# Ścieżki
 PATH_HARD = 'data/processed/hard_data.csv'
-PATH_SOFT = 'data/processed/soft_data.csv'
+PATH_SOFT = 'data/processed/soft_data.csv' # To wygenerujemy w locie
 PATH_OUTPUT = 'data/processed/MASTER_DATA.csv'
 
-# Lista 15 kluczowych branż (z Twojego obrazka)
-KEY_INDUSTRIES = [
-    '01', '10', '16', '23', '24', '29', '31', '35', # Produkcyjne
-    '41', '68',                                     # Budowlane
-    '46', '47', '49', '55', '62'                    # Usługowe
-]
-
-def generate_mock_data():
-    """Generuje sztuczne dane, żebyś mógł pracować zanim Minerzy skończą."""
-    print("⚠️ GENEROWANIE MOCK DATA (Sztuczne dane)...")
-    dates = pd.date_range(start='2021-01-01', periods=48, freq='MS')
-    
-    hard_data = []
-    soft_data = []
-    
-    for pkd in KEY_INDUSTRIES:
-        base_revenue = np.random.randint(500, 2000)
-        base_trend = np.random.randint(20, 80)
-        
+def generate_mock_data_fallback():
+    """Awaryjny generator, gdyby nie było pliku CSV."""
+    print("⚠️ BRAK PLIKU CSV - Generowanie pełnych danych sztucznych...")
+    dates = pd.date_range(start='2020-01-01', periods=48, freq='MS')
+    mock_data = []
+    codes = ['41', '47', '49', '55', '62'] # Przykładowe
+    for pkd in codes:
         for date in dates:
-            # Hard Data (Finanse)
-            rev = base_revenue + (np.sin(date.month) * 100) + np.random.randint(-50, 50)
-            profit = rev * np.random.uniform(0.05, 0.15)
-            hard_data.append([date, pkd, rev, profit])
-            
-            # Soft Data (Makro + Google)
-            g_trend = base_trend + np.random.randint(-10, 10)
-            wibor = 5.85 if date.year > 2021 else 0.5
-            energy = 100 + (date.year - 2020) * 20
-            soft_data.append([date, pkd, g_trend, wibor, energy])
-            
-    df_hard = pd.DataFrame(hard_data, columns=['Date', 'PKD_Code', 'Revenue', 'Profit'])
-    df_soft = pd.DataFrame(soft_data, columns=['Date', 'PKD_Code', 'Google_Trends', 'WIBOR', 'Energy_Price'])
+            rev = np.random.randint(1000, 5000)
+            mock_data.append([date, pkd, rev, rev*0.1, 0.05, 50, 5.85, 100])
     
-    return df_hard, df_soft
+    df = pd.DataFrame(mock_data, columns=['Date', 'PKD_Code', 'Revenue', 'Profit', 'Bankruptcy_Rate', 'Google_Trends', 'WIBOR', 'Energy_Price'])
+    return df
 
-def load_data():
+def load_and_process_data():
+    """
+    Funkcja Hybrydowa:
+    1. Czyta Twoje REALNE dane twarde (roczne).
+    2. Zamienia je na miesięczne (Upsampling/Interpolacja).
+    3. Generuje do nich pasujące dane miękkie (Mock Soft Data).
+    """
     if USE_MOCK_DATA:
-        return generate_mock_data()
+        return generate_mock_data_fallback()
+
+    print(f"📂 Wczytuję realne dane twarde z: {PATH_HARD}...")
     
-    if not os.path.exists(PATH_HARD) or not os.path.exists(PATH_SOFT):
-        raise FileNotFoundError("Brakuje plików CSV! Ustaw USE_MOCK_DATA = True lub poproś Minerów o dane.")
+    try:
+        # 1. Wczytanie Hard Data
+        # Używamy dtype={'PKD_Code': str}, żeby nie zgubić zera na początku (np. '01')
+        df_hard = pd.read_csv(PATH_HARD, parse_dates=['Date'], dtype={'PKD_Code': str})
         
-    df_hard = pd.read_csv(PATH_HARD, parse_dates=['Date'], dtype={'PKD_Code': str})
-    df_soft = pd.read_csv(PATH_SOFT, parse_dates=['Date'], dtype={'PKD_Code': str})
-    return df_hard, df_soft
+        # 2. UPSAMPLING (Zmiana Roczne -> Miesięczne)
+        print("📈 Przeliczanie danych rocznych na miesięczne (Interpolacja liniowa)...")
+        upsampled_dfs = []
+        
+        # Grupujemy po branży, żeby interpolować każdą osobno
+        for pkd, group in df_hard.groupby('PKD_Code'):
+            group = group.set_index('Date')
+            
+            # Resample do początku miesiąca ('MS') i interpolacja wartości między latami
+            group_monthly = group.resample('MS').interpolate(method='linear')
+            
+            # Kolumna PKD znika przy resample, przywracamy ją
+            group_monthly['PKD_Code'] = pkd
+            
+            upsampled_dfs.append(group_monthly.reset_index())
+            
+        # Sklejamy z powrotem w jedną całość
+        df_monthly = pd.concat(upsampled_dfs)
+        
+        # Ucinamy dane z przyszłości (interpolacja może dodać miesiące do końca roku 2024)
+        df_monthly = df_monthly[df_monthly['Date'] <= pd.Timestamp.now()]
+
+        # 3. GENEROWANIE SOFT DATA (Dopasowanie do nowych dat)
+        print("⚠️ Generowanie pasujących danych miękkich (Google Trends, Makro)...")
+        
+        # Listy na nowe dane
+        g_trends = []
+        wibors = []
+        energies = []
+        
+        for index, row in df_monthly.iterrows():
+            date = row['Date']
+            pkd = row['PKD_Code']
+            
+            # --- Symulacja Google Trends ---
+            # Sezonowość (sinusoida) + losowość
+            base_trend = 50
+            seasonality = np.sin(date.month) * 15
+            trend = base_trend + seasonality + np.random.randint(-10, 10)
+            g_trends.append(max(0, min(100, trend))) # Ograniczenie 0-100
+            
+            # --- Symulacja WIBOR (Realistyczna historia) ---
+            if date.year < 2021:
+                wibor = 0.2 + np.random.uniform(0, 0.1) # Niskie stopy
+            elif date.year == 2021:
+                wibor = 0.2 + (date.month * 0.4) # Wzrost w 2021
+            else:
+                wibor = 5.85 + np.random.uniform(-0.2, 0.2) # Wysokie stopy teraz
+            wibors.append(wibor)
+            
+            # --- Symulacja Cen Energii ---
+            # Trend rosnący od 2020
+            energy = 100 + (date.year - 2020) * 40 + (np.sin(date.month) * 10)
+            energies.append(energy)
+            
+        # Dodajemy nowe kolumny do DataFrame
+        df_monthly['Google_Trends'] = g_trends
+        df_monthly['WIBOR'] = wibors
+        df_monthly['Energy_Price'] = energies
+        
+        return df_monthly
+
+    except FileNotFoundError:
+        print(f"❌ BŁĄD: Nie znaleziono pliku {PATH_HARD}!")
+        return generate_mock_data_fallback()
 
 def calculate_index(df):
     print("⚙️ Przeliczanie Algorytmu PKO FutureIndex...")
     
-    # 1. Feature Engineering (Wskaźniki dynamiki)
-    # Sortujemy, żeby liczyć zmiany miesiąc do miesiąca
+    # 1. Feature Engineering
     df = df.sort_values(['PKD_Code', 'Date'])
     
-    # Dynamika Przychodów (R/R - rok do roku)
+    # Dynamika przychodów (Rok do Roku)
+    # pct_change(12) porównuje ten sam miesiąc z zeszłym rokiem
     df['Rev_Growth_YoY'] = df.groupby('PKD_Code')['Revenue'].pct_change(periods=12).fillna(0)
     
-    # Rentowność (Zysk / Przychód)
+    # Marża zysku
     df['Profit_Margin'] = df['Profit'] / df['Revenue']
     df['Profit_Margin'] = df['Profit_Margin'].fillna(0)
 
-    # 2. Mapowanie Ryzyka (Expert Knowledge z Twojego obrazka)
-    # Określamy, kogo boli WIBOR (kredyty), a kogo ENERGIA
+    # 2. Mapowanie Ryzyka (Expert Knowledge)
     risk_sensitivity = {
-        '41': {'wibor': 1.0, 'energy': 0.3}, # Budowlanka - boli WIBOR
-        '68': {'wibor': 1.0, 'energy': 0.2}, # Nieruchomości - boli WIBOR
-        '24': {'wibor': 0.4, 'energy': 1.0}, # Metale - boli prąd!
-        '35': {'wibor': 0.3, 'energy': -0.5},# Energetyka - jak prąd drożeje, oni zarabiają (ujemne ryzyko)
-        '62': {'wibor': 0.1, 'energy': 0.1}, # IT - luz
-        '49': {'wibor': 0.5, 'energy': 0.8}, # Transport - paliwo/energia
+        '41': {'wibor': 1.0, 'energy': 0.3}, # Budowlanka
+        '68': {'wibor': 1.0, 'energy': 0.2}, # Nieruchomości
+        '24': {'wibor': 0.4, 'energy': 1.0}, # Huty/Metale
+        '35': {'wibor': 0.3, 'energy': -0.5},# Energetyka
+        '49': {'wibor': 0.5, 'energy': 0.8}, # Transport
+        '10': {'wibor': 0.4, 'energy': 0.6}, # Spożywka
     }
     
-    # Funkcja pomocnicza do ryzyka
-    def get_risk_factor(pkd, factor_type):
-        return risk_sensitivity.get(pkd, {'wibor': 0.5, 'energy': 0.5}).get(factor_type, 0.5)
+    def get_risk(pkd, kind):
+        return risk_sensitivity.get(pkd, {'wibor': 0.5, 'energy': 0.5}).get(kind, 0.5)
 
-    df['Risk_WIBOR_Weight'] = df['PKD_Code'].apply(lambda x: get_risk_factor(x, 'wibor'))
-    df['Risk_Energy_Weight'] = df['PKD_Code'].apply(lambda x: get_risk_factor(x, 'energy'))
+    df['Risk_WIBOR_Weight'] = df['PKD_Code'].apply(lambda x: get_risk(x, 'wibor'))
+    df['Risk_Energy_Weight'] = df['PKD_Code'].apply(lambda x: get_risk(x, 'energy'))
 
-    # 3. Normalizacja (Skalowanie wszystkiego do 0-100)
+    # 3. Normalizacja (0-100)
     scaler = MinMaxScaler(feature_range=(0, 100))
     
-    # Skalujemy dane wejściowe
-    cols_to_norm = ['Rev_Growth_YoY', 'Profit_Margin', 'Google_Trends', 'WIBOR', 'Energy_Price']
-    for col in cols_to_norm:
-        # Normalizacja globalna (żeby porównywać branże między sobą)
-        df[f'Norm_{col}'] = scaler.fit_transform(df[[col]])
-
-    # 4. FINALNY WZÓR (ALGORITHM)
-    # Indeks = (Kondycja * 0.2) + (Rozwój * 0.3) + (Sentyment * 0.3) - (Ryzyko * 0.2)
+    cols_to_norm = ['Rev_Growth_YoY', 'Profit_Margin', 'Google_Trends', 'WIBOR', 'Energy_Price', 'Bankruptcy_Rate']
     
-    # Obliczamy Składnik Ryzyka (WIBOR + Energia ważone wrażliwością)
+    for col in cols_to_norm:
+        # Obsługa błędów, gdyby kolumna była stała (np. same zera)
+        if df[col].std() == 0:
+            df[f'Norm_{col}'] = 50 # Neutralna wartość
+        else:
+            df[f'Norm_{col}'] = scaler.fit_transform(df[[col]])
+
+    # 4. Obliczanie Ryzyka Złożonego
     df['Total_Risk_Score'] = (
         (df['Norm_WIBOR'] * df['Risk_WIBOR_Weight']) + 
         (df['Norm_Energy_Price'] * df['Risk_Energy_Weight'])
     )
-    # Normalizujemy ryzyko znowu do 0-100
     df['Norm_Total_Risk'] = scaler.fit_transform(df[['Total_Risk_Score']])
 
-    # GŁÓWNE RÓWNANIE
+    # --- FINALNY WZÓR ---
+    # Zysk (+) | Wzrost (+) | Google (+) | Ryzyko (-) | Upadłość (-)
     df['PKO_SCORE'] = (
-        (0.2 * df['Norm_Profit_Margin']) +  # KONDYCJA
-        (0.3 * df['Norm_Rev_Growth_YoY']) + # ROZWÓJ
-        (0.3 * df['Norm_Google_Trends']) -  # SENTYMENT
-        (0.2 * df['Norm_Total_Risk'])       # RYZYKO
+        (0.20 * df['Norm_Profit_Margin']) + 
+        (0.25 * df['Norm_Rev_Growth_YoY']) + 
+        (0.25 * df['Norm_Google_Trends']) - 
+        (0.15 * df['Norm_Total_Risk']) - 
+        (0.15 * df['Norm_Bankruptcy_Rate']) # Upadłość obniża wynik!
     )
-
-    # Przeskaluj wynik końcowy na ładne 0-100 pkt
+    
+    # Skalujemy wynik końcowy na 0-100
     df['PKO_SCORE_FINAL'] = scaler.fit_transform(df[['PKO_SCORE']])
     
     return df
 
 def main():
-    # 1. Wczytaj
-    df_hard, df_soft = load_data()
+    # 1. Ładowanie Hybrydowe
+    master_df = load_and_process_data()
     
-    # 2. Merge
-    print(f"📦 Łączenie danych... Hard: {df_hard.shape}, Soft: {df_soft.shape}")
-    master_df = pd.merge(df_hard, df_soft, on=['Date', 'PKD_Code'], how='inner')
-    
-    # 3. Policz Indeks
-    master_df = calculate_index(master_df)
-    
-    # 4. Zapisz
-    # Upewnij się, że folder istnieje
-    os.makedirs(os.path.dirname(PATH_OUTPUT), exist_ok=True)
-    master_df.to_csv(PATH_OUTPUT, index=False)
-    print(f"✅ SUKCES! Plik zapisany: {PATH_OUTPUT}")
-    print(master_df[['Date', 'PKD_Code', 'PKO_SCORE_FINAL']].tail())
+    if master_df is not None:
+        # 2. Obliczenia
+        master_df = calculate_index(master_df)
+        
+        # 3. Zapis
+        os.makedirs(os.path.dirname(PATH_OUTPUT), exist_ok=True)
+        master_df.to_csv(PATH_OUTPUT, index=False)
+        print(f"✅ SUKCES! Plik zapisany: {PATH_OUTPUT}")
+        print("Przykładowe wyniki (ostatnie 5 miesięcy):")
+        print(master_df[['Date', 'PKD_Code', 'PKO_SCORE_FINAL']].tail())
 
 if __name__ == "__main__":
     main()
