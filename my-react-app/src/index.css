@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+@theme {
+  /* Definicja kolorów PKO */
+  --color-pko-navy: #002D72;
+  --color-pko-red: #D6001C;
+  --color-pko-gray: #F2F2F2;
+  --color-pko-text: #2A2A2A;
+  --color-pko-blue: #0060A9;
+}
+
+/* Reset stylów */
+body {
+  background-color: var(--color-pko-gray);
+  color: var(--color-pko-text);
+  font-family: 'Inter', system-ui, sans-serif;
+  margin: 0;
+  padding: 0;
+}
