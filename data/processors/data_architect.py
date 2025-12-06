@@ -16,6 +16,8 @@ PATH_OUTPUT = 'data/processed/MASTER_DATA.csv'
 # Lista branż (do generatora mocków)
 KEY_INDUSTRIES = ['01', '10', '16', '23', '24', '29', '31', '35', '41', '46', '47', '49', '55', '62', '68']
 
+ 
+
 def generate_full_mock_data():
     """Plan B: Generuje kompletny zestaw danych (Hard + Soft) z powietrza."""
     print("⚠️ TRYB MOCK: Generowanie w pełni sztucznych danych...")
