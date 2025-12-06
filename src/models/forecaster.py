@@ -4,16 +4,16 @@ import os
 from prophet import Prophet
 import logging
 
-# Wyłączamy logi Propheta (jest bardzo gadatliwy w konsoli)
+# Wyłączamy logi
 logging.getLogger('cmdstanpy').setLevel(logging.WARNING)
 logging.getLogger('prophet').setLevel(logging.WARNING)
 
 def run_forecaster_prophet():
-    print("🚀 Uruchamiam AI Forecaster (Prophet)...")
-    print("🔮 Cel: Wygenerowanie prognoz na 24 miesiące w przód.")
+    print("🚀 Uruchamiam AI Forecaster (Celowany Okres)...")
+    print("🔮 Cel: Prognozy od 01.06.2024 do 31.05.2026.")
 
     # ==========================================
-    # 1. USTALANIE ŚCIEŻEK
+    # 1. KONFIGURACJA
     # ==========================================
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
@@ -21,122 +21,114 @@ def run_forecaster_prophet():
     INPUT_FILE = os.path.join(PROJECT_ROOT, 'data', 'processed', 'MASTER_DATA.csv')
     OUTPUT_FILE = os.path.join(PROJECT_ROOT, 'data', 'processed', 'predictions.csv')
 
+    TARGET_COL = 'PKO_SCORE_FINAL'
+    
+    # DEFINIUJEMY DOKŁADNY ZAKRES DAT DO PROGNOZY
+    # 'MS' oznacza pierwszy dzień miesiąca (Month Start)
+    TARGET_DATES = pd.date_range(start='2024-06-01', end='2026-05-31', freq='MS')
+
     # ==========================================
-    # 2. WCZYTANIE DANYCH HISTORYCZNYCH
+    # 2. WCZYTANIE I PRZYGOTOWANIE DANYCH
     # ==========================================
     if not os.path.exists(INPUT_FILE):
-        print(f"❌ BŁĄD: Nie widzę pliku wejściowego: {INPUT_FILE}")
+        print(f"❌ BŁĄD: Nie widzę pliku: {INPUT_FILE}")
         return
 
-    print(f"📂 Wczytuję historię z: {INPUT_FILE}...")
+    print(f"📂 Wczytuję dane z: {INPUT_FILE}...")
     df = pd.read_csv(INPUT_FILE)
 
-    # Upewniamy się, że mamy kolumnę z Datą i Wynikiem
     if 'Date' not in df.columns:
-        print("❌ BŁĄD: Brak kolumny 'Date' w pliku wejściowym! Prophet jej potrzebuje.")
-        print("Upewnij się, że kolega dostarczył plik z kolumną 'Date' (YYYY-MM-DD).")
+        print("❌ BŁĄD: Brak kolumny 'Date'.")
         return
     
-    # Wybieramy co prognozować. Priorytet: PKO_SCORE_FINAL (jeśli kolega policzył), potem Profit_Margin
-    target_col = 'PKO_SCORE_FINAL' 
-    if target_col not in df.columns:
-        if 'Final_Score' in df.columns:
-            target_col = 'Final_Score'
-        elif 'Profit_Margin' in df.columns:
-            print("⚠️ Brak Final_Score, trenuję na Profit_Margin!")
-            target_col = 'Profit_Margin'
-        else:
-            print("❌ BŁĄD: Nie wiem co prognozować (brak kolumny z wynikiem).")
-            return
+    if TARGET_COL not in df.columns:
+        # Fallback
+        TARGET_COL = 'Final_Score' if 'Final_Score' in df.columns else 'Profit_Margin'
 
-    print(f"🎯 Trenuję model na kolumnie: {target_col}")
-
-    # Konwersja daty na format datetime
     df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    df = df.dropna(subset=['Date']) # Usuwamy wiersze bez daty
+    df = df.dropna(subset=['Date'])
+
+    # --- WYGŁADZANIE DANYCH (Strategia Sukcesu) ---
+    print("🌊 Wygładzam dane historyczne (Rolling Mean 3M)...")
+    df = df.sort_values(['PKD_Code', 'Date'])
+    df[TARGET_COL] = df.groupby('PKD_Code')[TARGET_COL].transform(lambda x: x.rolling(window=3, min_periods=1).mean())
 
     # ==========================================
-    # 3. TRENOWANIE MODELI (Pętla po branżach)
+    # 3. TRENOWANIE I PROGNOZOWANIE
     # ==========================================
     unique_industries = df['PKD_Code'].unique()
-    print(f"🏭 Znaleziono {len(unique_industries)} unikalnych branż.")
+    print(f"🏭 Generuję prognozy dla {len(unique_industries)} branż...")
     
     all_forecasts = []
 
     for pkd in unique_industries:
-        # 1. Filtrujemy dane dla jednej branży
-        group = df[df['PKD_Code'] == pkd].copy()
-        
-        # Sortujemy chronologicznie
-        group = group.sort_values('Date')
+        # Bierzemy całą dostępną historię do treningu
+        group = df[df['PKD_Code'] == pkd].copy().sort_values('Date')
 
-        # Prophet wymaga minimum 2 punktów danych, ale dla sensownej prognozy lepiej mieć więcej
-        if len(group) < 5:
-            # print(f"⚠️ Pomijam branżę {pkd} (za mało danych: {len(group)})")
-            continue
+        if len(group) < 5: continue
 
-        # 2. Formatowanie pod Prophet (wymaga kolumn 'ds' i 'y')
-        prophet_df = group[['Date', target_col]].rename(columns={'Date': 'ds', target_col: 'y'})
+        # Formatowanie pod Prophet
+        prophet_df = group[['Date', TARGET_COL]].rename(columns={'Date': 'ds', TARGET_COL: 'y'})
+        prophet_df['cap'] = 100
+        prophet_df['floor'] = 0
 
-        # 3. Inicjalizacja i trening modelu
-        # yearly_seasonality=True -> wykrywa, że np. w grudniu budowlanka spada
-        m = Prophet(yearly_seasonality=True, daily_seasonality=False, weekly_seasonality=False)
+        # Model (Ustawienia v3.0 - Stabilne)
+        m = Prophet(
+            growth='logistic',
+            yearly_seasonality=True, 
+            daily_seasonality=False, 
+            weekly_seasonality=False,
+            changepoint_prior_scale=0.05 
+        )
         
         try:
             m.fit(prophet_df)
-        except Exception as e:
-            print(f"❌ Błąd treningu dla PKD {pkd}: {e}")
+        except:
             continue
 
-        # 4. Generowanie przyszłych dat (24 miesiące)
-        future = m.make_future_dataframe(periods=24, freq='M')
+        # --- TWORZENIE DAT PRZYSZŁYCH (Pod Twoje wymaganie) ---
+        future = pd.DataFrame({'ds': TARGET_DATES})
+        future['cap'] = 100
+        future['floor'] = 0
         
-        # 5. Predykcja
+        # Predykcja
         forecast = m.predict(future)
 
-        # 6. Czyszczenie wyników
-        # Zostawiamy tylko kolumny: Data, Prognoza, Dolna granica, Górna granica
+        # Przygotowanie wyniku
         result = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].copy()
+        result['PKD_Code'] = pkd
         
-        # Filtrujemy tylko przyszłość (to co jest po ostatniej znanej dacie historycznej)
-        last_history_date = prophet_df['ds'].max()
-        future_result = result[result['ds'] > last_history_date].copy()
+        # Zaokrąglanie i limity
+        for col in ['yhat', 'yhat_lower', 'yhat_upper']:
+            result[col] = result[col].clip(0, 100).round(1)
 
-        # Dodajemy z powrotem kod PKD
-        future_result['PKD_Code'] = pkd
-        
-        # Opcjonalnie: Clipujemy wynik, żeby nie wyszedł np. 150/100 albo ujemny
-        future_result['yhat'] = future_result['yhat'].clip(0, 100)
+        result = result.rename(columns={
+            'yhat': 'Predicted_Score',
+            'yhat_lower': 'Confidence_Lower',
+            'yhat_upper': 'Confidence_Upper',
+            'ds': 'Date'
+        })
 
-        all_forecasts.append(future_result)
+        all_forecasts.append(result)
 
     # ==========================================
-    # 4. ZAPIS WYNIKÓW
+    # 4. ZAPIS
     # ==========================================
     if all_forecasts:
         final_df = pd.concat(all_forecasts, ignore_index=True)
         
-        # Zmieniamy nazwy na czytelne dla Frontendu
-        final_df = final_df.rename(columns={
-            'ds': 'Date',
-            'yhat': 'Predicted_Score',
-            'yhat_lower': 'Confidence_Lower',
-            'yhat_upper': 'Confidence_Upper'
-        })
+        # Ostateczne sortowanie
+        final_df = final_df.sort_values(['PKD_Code', 'Date'])
 
-        # Zapis do CSV
         final_df.to_csv(OUTPUT_FILE, index=False)
         
         print("\n" + "="*60)
-        print(f"🏆 SUKCES! Wygenerowano prognozy dla {len(unique_industries)} branż.")
-        print(f"📅 Horyzont: 24 miesiące.")
-        print(f"💾 Plik zapisany: {OUTPUT_FILE}")
+        print(f"🏆 SUKCES! Wygenerowano plik: {OUTPUT_FILE}")
+        print(f"📅 Zakres dat: {final_df['Date'].min().date()}  ->  {final_df['Date'].max().date()}")
         print("="*60)
-        print("Przykładowe prognozy:")
         print(final_df.head())
-        
     else:
-        print("⚠️ Nie udało się wygenerować żadnych prognoz (sprawdź dane wejściowe).")
+        print("⚠️ Nie udało się wygenerować prognoz.")
 
 if __name__ == "__main__":
     run_forecaster_prophet()
