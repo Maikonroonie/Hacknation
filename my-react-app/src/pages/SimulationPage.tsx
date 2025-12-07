@@ -66,7 +66,7 @@ const SimulationPage = () => {
           };
         }) as DataRecord[];
 
-        console.log(`✅ Załadowano ${parsedData.length} wierszy danych.`);
+        console.log(` Załadowano ${parsedData.length} wierszy danych.`);
 
         if (parsedData.length === 0) {
           throw new Error("Plik CSV nie zawiera żadnych danych.");
