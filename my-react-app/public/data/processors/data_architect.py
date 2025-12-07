@@ -6,10 +6,14 @@ import os
 # --- KONFIGURACJA ---
 USE_MOCK_DATA = False
 
-# Ścieżki do plików
-PATH_HARD = 'data/processed/hard_data_extnd.csv'
-PATH_SOFT = 'data/processed/soft_data.csv'
-PATH_OUTPUT = 'data/processed/MASTER_DATA.csv'
+
+# Zakładamy, że skrypt jest w folderze Hacknation/data/processors/
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Używamy plików z końcówką v2
+PATH_HARD = os.path.join(os.path.dirname(SCRIPT_DIR), 'processed', 'hard_datav2.csv')
+PATH_SOFT = os.path.join(os.path.dirname(SCRIPT_DIR), 'processed', 'soft_datav2.csv')
+PATH_OUTPUT = os.path.join(os.path.dirname(SCRIPT_DIR), 'processed', 'MASTER_DATA.csv')
 
 # Lista branż (do generatora mocków)
 KEY_INDUSTRIES = ['01', '10', '16', '23', '24', '29', '31', '35', '41', '46', '47', '49', '55', '62', '68']
