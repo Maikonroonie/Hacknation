@@ -59,7 +59,7 @@ const INDUSTRY_NAMES: Record<string, string> = {
   "16": "Prod. Drewna",
   "23": "Minerały",
   "24": "Metale",
-  "29": "Automotive",
+  "29": "Motoryzacja",
   "31": "Meble",
   "35": "Energetyka",
   "41": "Budownictwo",

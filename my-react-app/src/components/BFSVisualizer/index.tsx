@@ -12,16 +12,16 @@ const styles = {
     width: '100%',
     fontFamily: 'sans-serif',
     overflow: 'hidden',
-    backgroundColor: '#1a1a1a',
-    color: '#eee'
+    backgroundColor: '#ffffff',
+    color: '#0f172a'
   },
   sidebar: {
     width: '320px',
     padding: '20px',
-    backgroundColor: '#252525',
-    borderRight: '1px solid #333',
+    backgroundColor: '#f8fafc',
+    borderRight: '1px solid #e2e8f0',
     overflowY: 'auto' as const,
-    boxShadow: '2px 0 5px rgba(0,0,0,0.3)',
+    boxShadow: '2px 0 5px rgba(0,0,0,0.1)',
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '15px'
@@ -33,8 +33,9 @@ const styles = {
   },
   controlGroup: {
     padding: '10px',
-    backgroundColor: '#333',
-    borderRadius: '8px'
+    backgroundColor: '#f1f5f9',
+    borderRadius: '8px',
+    border: '1px solid #e2e8f0'
   },
   label: {
     display: 'flex',
@@ -54,15 +55,16 @@ const styles = {
   button: {
     flex: 1,
     padding: '8px',
-    backgroundColor: '#4a4a4a',
+    backgroundColor: '#e2e8f0',
     border: 'none',
     borderRadius: '4px',
-    color: 'white',
+    color: '#1e293b',
     cursor: 'pointer',
     fontWeight: 'bold' as const
   },
   activeButton: {
-    backgroundColor: '#007bff'
+    backgroundColor: '#002D72',
+    color: '#ffffff'
   }
 };
 
@@ -138,17 +140,32 @@ const MarketVisualizer: React.FC = () => {
   };
 
   // Interaction Logic
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault(); // Stop page scroll
-    const scaleFactor = 1.05;
-    const direction = e.deltaY > 0 ? -1 : 1;
-    const newZoom = direction > 0 ? viewport.zoom * scaleFactor : viewport.zoom / scaleFactor;
-    
-    // Clamp zoom
-    if (newZoom < 0.1 || newZoom > 5) return;
 
-    setViewport(prev => ({ ...prev, zoom: newZoom }));
-  };
+
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const onWheel = (e: WheelEvent) => {
+        e.preventDefault();
+        const scaleFactor = 1.05;
+        const direction = e.deltaY > 0 ? -1 : 1;
+        setViewport((prev) => {
+            const newZoom = direction > 0 ? prev.zoom * scaleFactor : prev.zoom / scaleFactor;
+            // Clamp zoom
+            if (newZoom < 0.1 || newZoom > 5) return prev;
+            return { ...prev, zoom: newZoom };
+        });
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+
+    return () => {
+        container.removeEventListener('wheel', onWheel);
+    };
+  }, []);
 
   const handleMouseDown = (e: React.MouseEvent, nodeId?: string) => {
     e.preventDefault();
@@ -197,66 +214,66 @@ const MarketVisualizer: React.FC = () => {
 
   return (
     <div style={styles.container}>
-      {/* Sidebar - Graphite Style */}
-      <div style={{...styles.sidebar, backgroundColor: '#1e1e1e', borderRight: '1px solid #000'}}>
-        <div style={{ borderBottom: '1px solid #333', paddingBottom: '10px' }}>
-          <p style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', margin: 0 }}>
-             Market Visualizer
+      {/* Sidebar - Light Theme */}
+      <div style={{...styles.sidebar, backgroundColor: '#f8fafc', borderRight: '1px solid #e2e8f0'}}>
+        <div style={{ borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+          <p style={{ fontSize: '0.9rem', color: '#0f172a', fontWeight: 'bold', margin: 0 }}>
+             Wizualizacja Rynku
           </p>
-          <p style={{ fontSize: '0.75rem', color: '#888', margin: '5px 0' }}>
-            Systemic Risk • {graphData.nodes.length} Nodes • {graphData.edges.length} Edges
+          <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '5px 0' }}>
+            Ryzyko Systemowe • {graphData.nodes.length} Węzłów • {graphData.edges.length} Krawędzi
           </p>
         </div>
 
-        <div style={{...styles.controlGroup, backgroundColor: '#2a2a2a'}}>
+        <div style={{...styles.controlGroup, backgroundColor: '#f1f5f9', border: '1px solid #e2e8f0'}}>
            <div style={styles.buttonRow}>
-             <button 
-               style={{...styles.button, backgroundColor: isPlaying ? '#ff5555' : '#00adb5'}}
+             <button
+               style={{...styles.button, backgroundColor: isPlaying ? '#ff5555' : '#002D72', color: '#ffffff'}}
                onClick={() => setIsPlaying(!isPlaying)}
              >
-               {isPlaying ? 'PAUSE' : 'PLAY'}
+               {isPlaying ? 'PAUZA' : 'START'}
              </button>
-             <button style={{...styles.button, backgroundColor: '#444'}} onClick={handleReset}>
+             <button style={{...styles.button, backgroundColor: '#e2e8f0', color: '#1e293b'}} onClick={handleReset}>
                RESET
              </button>
            </div>
 
            <div style={{display: 'flex', gap: '5px', marginBottom: '10px'}}>
-             <button style={{...styles.button, fontSize: '0.8rem'}} onClick={() => handleStep('prev')}>{'< Step'}</button>
-             <button style={{...styles.button, fontSize: '0.8rem'}} onClick={() => handleStep('next')}>{'Step >'}</button>
+             <button style={{...styles.button, fontSize: '0.8rem'}} onClick={() => handleStep('prev')}>{'< Krok'}</button>
+             <button style={{...styles.button, fontSize: '0.8rem'}} onClick={() => handleStep('next')}>{'Krok >'}</button>
            </div>
-           
-           <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#fff', marginBottom: '5px'}}>
-             <span>Timeline: {currentStep}</span>
-             <span>Speed: {speed}ms</span>
+
+           <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#64748b', marginBottom: '5px'}}>
+             <span>Oś czasu: {currentStep}</span>
+             <span>Szybkość: {speed}ms</span>
            </div>
-           
-           <input 
-             type="range" 
-             min="0" 
-             max={Math.max(0, animationSteps.length - 1)} 
+
+           <input
+             type="range"
+             min="0"
+             max={Math.max(0, animationSteps.length - 1)}
              value={currentStep}
              onChange={(e) => {
                setIsPlaying(false);
                setCurrentStep(parseInt(e.target.value));
              }}
-             style={{width: '100%', accentColor: '#00adb5'}}
+             style={{width: '100%', accentColor: '#002D72'}}
            />
-           
+
            <div style={{marginTop: '10px', display: 'flex', alignItems: 'center', gap: '10px'}}>
-               <span style={{fontSize: '0.7rem'}}>Speed:</span>
-               <input 
-                 type="range" 
-                 min="50" 
-                 max="1000" 
+               <span style={{fontSize: '0.7rem'}}>Szybkość:</span>
+               <input
+                 type="range"
+                 min="50"
+                 max="1000"
                  step="50"
-                 value={1050 - speed} 
+                 value={1050 - speed}
                  onChange={(e) => setSpeed(1050 - parseInt(e.target.value))}
                  style={{flex: 1, height: '4px'}}
                />
            </div>
         </div>
-        
+
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {graphData.nodes.map(node => {
               const currentScore = scores[node.id] ?? node.baseScore;
@@ -264,10 +281,10 @@ const MarketVisualizer: React.FC = () => {
               
               return (
                 <div key={node.id} style={{
-                    padding: '8px', 
-                    marginBottom: '5px', 
-                    backgroundColor: isActive ? '#333' : 'transparent',
-                    borderLeft: isActive ? '3px solid #00adb5' : '3px solid transparent',
+                    padding: '8px',
+                    marginBottom: '5px',
+                    backgroundColor: isActive ? '#f1f5f9' : 'transparent',
+                    borderLeft: isActive ? '3px solid #002D72' : '3px solid transparent',
                     borderRadius: '2px',
                     transition: 'background 0.3s'
                 }}>
@@ -278,10 +295,10 @@ const MarketVisualizer: React.FC = () => {
                     </span>
                   </div>
                   {/* Mini Bar */}
-                  <div style={{height: '3px', backgroundColor: '#333', borderRadius: '1px', marginTop: '3px'}}>
+                  <div style={{height: '3px', backgroundColor: '#e2e8f0', borderRadius: '1px', marginTop: '3px'}}>
                       <div style={{
-                          width: `${Math.min(100, Math.max(0, currentScore))}%`, 
-                          height: '100%', 
+                          width: `${Math.min(100, Math.max(0, currentScore))}%`,
+                          height: '100%',
                           backgroundColor: getColor(currentScore),
                           transition: 'width 0.3s'
                       }} />
@@ -293,37 +310,37 @@ const MarketVisualizer: React.FC = () => {
       </div>
 
       {/* Main Graph Area */}
-      <div 
-        style={{...styles.main, backgroundColor: '#0f0f0f', overflow: 'hidden'}}
+      <div
+        ref={containerRef}
+        style={{...styles.main, backgroundColor: '#ffffff', overflow: 'hidden'}}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
         onMouseDown={(e) => handleMouseDown(e)} // Background pan
-        onWheel={handleWheel}
       >
-        <svg 
+        <svg
             ref={svgRef}
-            width="100%" 
-            height="100%" 
+            width="100%"
+            height="100%"
             style={{ cursor: isPanning ? 'grabbing' : (draggingNodeId ? 'grabbing' : 'default') }}
         >
           <defs>
             {/* Subtle Arrowhead */}
             <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="22" refY="3" orient="auto">
-              <path d="M0,0 L6,3 L0,6" fill="#444" />
+              <path d="M0,0 L6,3 L0,6" fill="#cbd5e1" />
             </marker>
             {/* Active Arrowhead */}
             <marker id="arrowhead-active" markerWidth="6" markerHeight="6" refX="22" refY="3" orient="auto">
-              <path d="M0,0 L6,3 L0,6" fill="#00adb5" />
+              <path d="M0,0 L6,3 L0,6" fill="#002D72" />
             </marker>
           </defs>
-            
+
           {/* Zoom/Pan Group */}
           <g transform={`translate(${viewport.x}, ${viewport.y}) scale(${viewport.zoom})`}>
 
           {/* Grid Background Pattern */}
           <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#222" strokeWidth="1"/>
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#f1f5f9" strokeWidth="1"/>
           </pattern>
           <rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#grid)" />
 
@@ -331,29 +348,29 @@ const MarketVisualizer: React.FC = () => {
           {graphData.edges.map((edge, idx) => {
             const sourceNode = graphData.nodes.find(n => n.id === edge.source);
             const targetNode = graphData.nodes.find(n => n.id === edge.target);
-            
+
             if (!sourceNode || !targetNode) return null;
-            
+
             const edgeKey = `${edge.source}-${edge.target}`;
             const isActive = activeStepData.activeEdgeIds.includes(edgeKey);
 
-            const x1 = sourceNode.x || 0; 
+            const x1 = sourceNode.x || 0;
             const y1 = sourceNode.y || 0;
             const x2 = targetNode.x || 0;
             const y2 = targetNode.y || 0;
 
             const strokeWidth = isActive ? 2 : 1;
-            const strokeColor = isActive ? '#00adb5' : '#333'; 
+            const strokeColor = isActive ? '#002D72' : '#cbd5e1';
             const opacity = isActive ? 1 : 0.6;
             const marker = isActive ? "url(#arrowhead-active)" : "url(#arrowhead)";
-            
+
             // Midpoint for text
             const midX = (x1 + x2) / 2;
             const midY = (y1 + y2) / 2;
 
             return (
               <g key={`${edgeKey}-${idx}`}>
-                <line 
+                <line
                   x1={x1} y1={y1} x2={x2} y2={y2}
                   stroke={strokeColor}
                   strokeWidth={strokeWidth}
@@ -361,15 +378,15 @@ const MarketVisualizer: React.FC = () => {
                   opacity={opacity}
                   style={{ transition: 'stroke 0.3s, stroke-width 0.3s' }}
                 />
-                
+
                 {/* Edge Weight Label */}
                 {edge.weight > 0.01 && (
                     <g transform={`translate(${midX}, ${midY})`}>
-                       <rect x="-10" y="-7" width="20" height="14" fill="#0f0f0f" opacity="0.9" rx="2" />
-                       <text 
-                         textAnchor="middle" 
-                         dy="3" 
-                         fill="#555" 
+                       <rect x="-10" y="-7" width="20" height="14" fill="#ffffff" opacity="0.9" rx="2" />
+                       <text
+                         textAnchor="middle"
+                         dy="3"
+                         fill="#64748b"
                          fontSize="8"
                          fontFamily="monospace"
                          pointerEvents="none"
@@ -389,38 +406,38 @@ const MarketVisualizer: React.FC = () => {
             const color = getColor(score);
             const x = node.x || 50;
             const y = node.y || 50;
-            
+
             const isActive = activeStepData.activeNodeIds.includes(node.id);
-            
+
             return (
-              <g 
-                key={node.id} 
+              <g
+                key={node.id}
                 transform={`translate(${x}, ${y})`}
                 onMouseDown={(e) => { e.stopPropagation(); handleMouseDown(e, node.id); }}
                 style={{ cursor: 'grab', transition: 'transform 0.1s' }}
               >
                 {/* Halo for active nodes */}
                 {isActive && (
-                   <circle r="25" fill="none" stroke="#00adb5" strokeWidth="1" opacity="0.6">
+                   <circle r="25" fill="none" stroke="#002D72" strokeWidth="1" opacity="0.6">
                      <animate attributeName="r" from="18" to="30" dur="1.5s" repeatCount="indefinite" />
                      <animate attributeName="opacity" from="0.6" to="0" dur="1.5s" repeatCount="indefinite" />
                    </circle>
                 )}
-                
+
                 {/* Node Body */}
-                <circle 
-                  r="18" 
-                  fill="#1a1a1a"
-                  stroke={color} 
+                <circle
+                  r="18"
+                  fill="#ffffff"
+                  stroke={color}
                   strokeWidth="3"
                 />
-                
+
                 {/* Score in center */}
-                <text 
+                <text
                   dy="4"
-                  fill={color} 
-                  textAnchor="middle" 
-                  fontSize="10" 
+                  fill={color}
+                  textAnchor="middle"
+                  fontSize="10"
                   fontWeight="bold"
                   fontFamily="monospace"
                   style={{ pointerEvents: 'none' }}
@@ -429,13 +446,13 @@ const MarketVisualizer: React.FC = () => {
                 </text>
 
                 {/* Label below */}
-                <text 
-                  y="30" 
-                  fill="#aaa" 
-                  textAnchor="middle" 
+                <text
+                  y="30"
+                  fill="#64748b"
+                  textAnchor="middle"
                   fontSize="10"
                   fontFamily="sans-serif"
-                  style={{ pointerEvents: 'none', textShadow: '0 2px 2px #000' }}
+                  style={{ pointerEvents: 'none', textShadow: '0 1px 2px rgba(255,255,255,0.8)' }}
                 >
                   {node.label}
                 </text>

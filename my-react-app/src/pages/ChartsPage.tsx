@@ -49,22 +49,18 @@ const ChartsPage = () => {
         const master = Papa.parse<RawData>(masterText, { header: true, skipEmptyLines: true }).data;
         const preds = Papa.parse<RawData>(predText, { header: true, skipEmptyLines: true }).data;
 
-        // Używamy funkcji parseRankValue z RankingPage dla spójności
         const parseRankValue = (value: string | number | undefined): number => 
             parseFloat(((value ?? 0) as string).toString().replace(',', '.'));
 
 
-        // 1. Znajdź wszystkie unikalne kody PKD
-        // Zapewniamy trim, aby uniknąć błędów formatowania w CSV
         const allPkds = Array.from(new Set(master.map(d => trimDate(d.PKD_Code)))).filter(Boolean).sort();
 
-        // 2. Przetwórz dane dla każdego PKD
         const processedData = allPkds.map(pkdCode => {
-          // --- HISTORIA ---
+
           const historyData = master
             .filter(d => trimDate(d.PKD_Code) === pkdCode)
             .map(d => ({
-              date: trimDate(d.Date), // CZYŚCIMY DATY
+              date: trimDate(d.Date),
               history: parseRankValue(d.PKO_SCORE_FINAL),
               prediction: null
             }))
@@ -73,31 +69,31 @@ const ChartsPage = () => {
           const lastHistoryPoint = historyData[historyData.length - 1];
           const lastDate = lastHistoryPoint ? new Date(lastHistoryPoint.date) : new Date(0);
 
-          // --- PREDYKCJA ---
+
           const predictionData = preds
             .filter(d => trimDate(d.PKD_Code) === pkdCode)
-            // Bierzemy tylko daty nowsze niż ostatnia historia
+
             .filter(d => new Date(trimDate(d.Date)) > lastDate) 
             .map(d => ({
-              date: trimDate(d.Date), // CZYŚCIMY DATY
+              date: trimDate(d.Date),
               history: null,
               prediction: parseRankValue(d.Predicted_Score)
             }))
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-          // --- FIX NA DZIURĘ (MOST) ---
+
           if (lastHistoryPoint) {
             predictionData.unshift({
               date: lastHistoryPoint.date, 
               history: null,
-              prediction: lastHistoryPoint.history // START RED LINE HERE
+              prediction: lastHistoryPoint.history
             });
           }
 
-          // Łączymy
+
           const combined = [...historyData, ...predictionData];
           
-          const finalPkd = pkdCode === '1' ? '01' : pkdCode; // Poprawka PKD 1 vs 01 dla nazwy
+          const finalPkd = pkdCode === '1' ? '01' : pkdCode;
 
           return {
             pkdCode: finalPkd,
@@ -157,7 +153,7 @@ const ChartsPage = () => {
                   <AreaChart data={industry.data} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id={`grad-${industry.pkdCode}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#002D72" stopOpacity={0.1}/>
+                        <stop offset="5%" stopColor="#002D72;" stopOpacity={0.1}/>
                         <stop offset="95%" stopColor="#002D72" stopOpacity={0}/>
                       </linearGradient>
                     </defs>

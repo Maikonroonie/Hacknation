@@ -7,10 +7,9 @@ export const generateBFSSteps = (
   
   // Constants
   const DAMPING = 0.9;
-  const THRESHOLD = 0.0001; // Minimum deviation to trigger propagation
+  const THRESHOLD = 0.0001;
   const MAX_STEPS = 100;
 
-  // Initialize Adjacency Map
   const adj: { [key: string]: { target: string, weight: number }[] } = {};
   graph.edges.forEach(edge => {
     if (!adj[edge.source]) adj[edge.source] = [];
@@ -34,8 +33,6 @@ export const generateBFSSteps = (
     return state;
   };
 
-  // Step 0: Initial "Tension"
-  // Nodes with score != 50 emit a wave.
   let waveFront: { [nodeId: string]: number } = {};
   
   graph.nodes.forEach(n => {
@@ -51,7 +48,7 @@ export const generateBFSSteps = (
     currentScores: getCurrentScores()
   });
 
-  // BFS / Propagation Loop
+
   for (let step = 0; step < MAX_STEPS; step++) {
     const nextWaveFront: { [nodeId: string]: number } = {};
     const activeEdges: string[] = [];
@@ -60,7 +57,7 @@ export const generateBFSSteps = (
     const nodesToPropagate = Object.keys(waveFront);
     if (nodesToPropagate.length === 0) break;
 
-    // For each node in the current wave
+
     nodesToPropagate.forEach(sourceId => {
       const delta = waveFront[sourceId];
       const neighbors = adj[sourceId] || [];
@@ -69,10 +66,10 @@ export const generateBFSSteps = (
         const passedDelta = delta * edge.weight * DAMPING;
         
         if (Math.abs(passedDelta) >= THRESHOLD) {
-            // Add to next wave
+
             nextWaveFront[edge.target] = (nextWaveFront[edge.target] || 0) + passedDelta;
             
-            // Mark edge as active
+
             activeEdges.push(`${sourceId}-${edge.target}`);
         }
       });
@@ -85,7 +82,7 @@ export const generateBFSSteps = (
     });
 
     if (activeNodesThisStep.length === 0 && activeEdges.length === 0) {
-        break; // Die out
+        break;
     }
     
     steps.push({
