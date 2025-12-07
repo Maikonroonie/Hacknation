@@ -15,7 +15,6 @@ import {
   Calendar,
   TrendingUp,
   TrendingDown,
-  Play,
 } from "lucide-react";
 
 export interface DataRecord {
