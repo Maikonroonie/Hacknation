@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import Papa from 'papaparse';
 import Layout from '../components/Layout';
-// Importujemy PKD_NAMES z dataLoader do mapowania kodów na nazwy
 import { PKD_NAMES } from '../utils/dataLoader'; 
 import {
   AreaChart,
@@ -22,7 +21,6 @@ import {
   RotateCcw,
 } from "lucide-react";
 
-// --- TYPY DANYCH ---
 interface RawData {
   Date: string;
   PKD_Code: string;
@@ -36,7 +34,6 @@ interface RawData {
   Norm_Bankrupt?: string;
 }
 
-// --- GŁÓWNA STRONA (Loader) ---
 const SimulationPage = () => {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,7 +49,6 @@ const SimulationPage = () => {
           skipEmptyLines: true,
         });
 
-        // Konwersja liczb
         const processed = result.data.map(d => ({
           ...d,
           PKO_SCORE_FINAL: parseFloat((d.PKO_SCORE_FINAL || '0').replace(',', '.')),
@@ -96,11 +92,9 @@ const SimulationPage = () => {
   );
 };
 
-// --- WIDOK SYMULACJI (Kalkulator) ---
 
 const SimulationView = ({ data }: { data: any[] }) => {
   const pkdList = Array.from(new Set(data.map((d) => d.PKD_Code))).sort();
-  // Zapewnienie, że domyślny PKD jest dostępny, lub wybór pierwszego
   const defaultPkd = pkdList.find(pkd => pkd === '41') || pkdList[0] || "10";
   const [selectedPkd, setSelectedPkd] = useState(defaultPkd); 
 
@@ -119,11 +113,9 @@ const SimulationView = ({ data }: { data: any[] }) => {
 
   const lastRecord = sectorData[sectorData.length - 1];
 
-  // SILNIK SYMULACJI (Logika biznesowa - ta sama co była)
   const calculateScore = (record: any, simulation: any) => {
     if (!record) return 0;
     
-    // ... (logika calculateScore - nie zmieniona)
 
     const riskMap: Record<string, { w: number, e: number }> = {
       '41': { w: 1.0, e: 0.3 }, 
@@ -217,10 +209,8 @@ const SimulationView = ({ data }: { data: any[] }) => {
         </button>
       </div>
 
-      {/* 2. DASHBOARD WYNIKÓW (Prawa kolumna) */}
       <div className="xl:col-span-8 flex flex-col gap-6">
         
-        {/* KAFELKI WYNIKU */}
         <h2 className="text-2xl font-bold text-slate-800">{sectorName} (PKD: {selectedPkd})</h2>
 
         <div className="grid grid-cols-2 gap-6">
@@ -244,7 +234,6 @@ const SimulationView = ({ data }: { data: any[] }) => {
           </div>
         </div>
 
-        {/* WYKRES SCENARIUSZOWY */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex-1 min-h-[400px]">
           <h3 className="font-bold text-lg text-pko-navy mb-6">Projekcja Wpływu na Trend</h3>
           <ResponsiveContainer width="100%" height="85%">
@@ -287,9 +276,7 @@ const SimulationView = ({ data }: { data: any[] }) => {
   );
 };
 
-// --- KOMPONENT SUWAKA (Slider) ---
 const Slider = ({ label, val, set, min, max, step = 1, unit, color, desc }: any) => {
-    // Mapa kolorów - bezpieczna dla Tailwind
     const colors: Record<string, any> = {
         green:   { text: 'text-green-600', bg: 'bg-green-50', accent: 'accent-green-600' },
         emerald: { text: 'text-emerald-600', bg: 'bg-emerald-50', accent: 'accent-emerald-600' },

@@ -1,8 +1,5 @@
 import Papa from 'papaparse';
-// Pamiętaj o 'type' przy imporcie interfejsów!
 import type { MasterRecord, PredictionRecord, IndustrySummary } from '../types';
-
-// Słownik nazw branż (na podstawie Twoich danych)
 export const PKD_NAMES: Record<string, string> = {
   "1": "Rolnictwo i uprawy",
   "01": "Rolnictwo i uprawy",
@@ -50,13 +47,12 @@ export const loadDashboardData = async () => {
 
     masterData.forEach(row => {
       if (row.PKD_Code && row.PKO_SCORE_FINAL) {
-        // Fix na polskie przecinki (gdyby wystąpiły)
         const score = parseFloat(row.PKO_SCORE_FINAL.replace(',', '.'));
         const revenue = parseFloat(row.Revenue ? row.Revenue.replace(',', '.') : '0');
         
         industriesMap.set(row.PKD_Code, {
           pkdCode: row.PKD_Code,
-          pkdName: PKD_NAMES[row.PKD_Code] || `Branża ${row.PKD_Code}`, // Przypisanie nazwy
+          pkdName: PKD_NAMES[row.PKD_Code] || `Branża ${row.PKD_Code}`,
           currentScore: score,
           revenue: revenue,
         });

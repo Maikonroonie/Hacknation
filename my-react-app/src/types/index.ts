@@ -1,5 +1,3 @@
-// src/types/index.ts
-
 export interface MasterRecord {
   Date: string;
   PKD_Code: string;
