@@ -18,6 +18,13 @@ export interface GraphData {
   edges: Edge[];
 }
 
+
 export interface MarketState {
-  [nodeId: string]: number; // Current delta/score for each node
+  [nodeId: string]: number; 
+}
+
+export interface AnimationStep {
+  activeNodeIds: string[];  // Nodes processing in this step
+  activeEdgeIds: string[];  // Edges transmitting in this step (formatted "source-target")
+  currentScores: MarketState; // Snapshot of scores at this step
 }
