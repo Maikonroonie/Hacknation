@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import Papa from 'papaparse';
 import Layout from '../components/Layout';
+// Importujemy PKD_NAMES z dataLoader do mapowania kodów na nazwy
+import { PKD_NAMES } from '../utils/dataLoader'; 
 import {
   AreaChart,
   Area,
@@ -20,7 +22,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 
-// Typy danych z pliku CSV
+// --- TYPY DANYCH ---
 interface RawData {
   Date: string;
   PKD_Code: string;
@@ -34,12 +36,11 @@ interface RawData {
   Norm_Bankrupt?: string;
 }
 
-// Główny komponent strony
+// --- GŁÓWNA STRONA (Loader) ---
 const SimulationPage = () => {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Ładowanie danych przy starcie
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -51,7 +52,7 @@ const SimulationPage = () => {
           skipEmptyLines: true,
         });
 
-        // Konwersja stringów na liczby (zamiana przecinków na kropki)
+        // Konwersja liczb
         const processed = result.data.map(d => ({
           ...d,
           PKO_SCORE_FINAL: parseFloat((d.PKO_SCORE_FINAL || '0').replace(',', '.')),
@@ -95,14 +96,14 @@ const SimulationPage = () => {
   );
 };
 
-// --- KOMPONENT WIDOKU SYMULACJI ---
+// --- WIDOK SYMULACJI (Kalkulator) ---
 
 const SimulationView = ({ data }: { data: any[] }) => {
-  // 1. Pobieramy listę dostępnych PKD z danych
   const pkdList = Array.from(new Set(data.map((d) => d.PKD_Code))).sort();
-  const [selectedPkd, setSelectedPkd] = useState(pkdList[0] || "10"); 
+  // Zapewnienie, że domyślny PKD jest dostępny, lub wybór pierwszego
+  const defaultPkd = pkdList.find(pkd => pkd === '41') || pkdList[0] || "10";
+  const [selectedPkd, setSelectedPkd] = useState(defaultPkd); 
 
-  // Parametry symulacji (State)
   const [params, setParams] = useState({
     revenue: 0,
     liquidity: 0,
@@ -112,41 +113,39 @@ const SimulationView = ({ data }: { data: any[] }) => {
     sentiment: 0,
   });
 
-  // 2. Filtrujemy dane dla wybranego sektora
   const sectorData = data
     .filter((d) => d.PKD_Code === selectedPkd)
     .sort((a, b) => new Date(a.Date).getTime() - new Date(b.Date).getTime());
 
   const lastRecord = sectorData[sectorData.length - 1];
 
-  // 3. SILNIK SYMULACJI (Logika biznesowa)
+  // SILNIK SYMULACJI (Logika biznesowa - ta sama co była)
   const calculateScore = (record: any, simulation: any) => {
     if (!record) return 0;
+    
+    // ... (logika calculateScore - nie zmieniona)
 
     const riskMap: Record<string, { w: number, e: number }> = {
-      '41': { w: 1.0, e: 0.3 }, // Budownictwo
-      '68': { w: 1.0, e: 0.2 }, // Nieruchomości
-      '49': { w: 0.5, e: 0.9 }, // Transport
-      '35': { w: 0.3, e: -0.5 }, // Energetyka
-      '10': { w: 0.4, e: 0.6 }, // Spożywka
-      '24': { w: 0.4, e: 1.0 }, // Metale
-      '62': { w: 0.1, e: 0.1 }, // IT
+      '41': { w: 1.0, e: 0.3 }, 
+      '68': { w: 1.0, e: 0.2 }, 
+      '49': { w: 0.5, e: 0.9 }, 
+      '35': { w: 0.3, e: -0.5 }, 
+      '10': { w: 0.4, e: 0.6 }, 
+      '24': { w: 0.4, e: 1.0 }, 
+      '62': { w: 0.1, e: 0.1 }, 
       'default': { w: 0.5, e: 0.5 },
     };
     const sens = riskMap[record.PKD_Code] || riskMap["default"];
 
-    // Pozytywy
     let growthScore = Math.min(100, Math.max(0, record.Norm_Growth + simulation.revenue * 1.5));
     let liqScore = Math.min(100, Math.max(0, record.Norm_Liquidity + simulation.liquidity * 2));
     let emplScore = Math.min(100, Math.max(0, record.Norm_Employ + simulation.employment * 1.5));
     let googleScore = Math.min(100, Math.max(0, record.Norm_Google + simulation.sentiment));
 
-    // Negatywy (Ryzyko)
     let baseRisk = record.Norm_Total_Risk || 50;
     let addedRisk = (simulation.wibor * 5 * sens.w) + (simulation.energy * 0.2 * sens.e);
     let riskScore = Math.min(100, Math.max(0, baseRisk + addedRisk));
 
-    // Wzór finalny
     let final =
       0.15 * record.Norm_Margin +
       0.15 * growthScore +
@@ -158,6 +157,7 @@ const SimulationView = ({ data }: { data: any[] }) => {
 
     return Math.max(0, Math.min(100, final));
   };
+  // Koniec logiki symulacji
 
   const currentScore = lastRecord ? lastRecord.PKO_SCORE_FINAL : 0;
   const simScore = calculateScore(lastRecord, params);
@@ -165,17 +165,16 @@ const SimulationView = ({ data }: { data: any[] }) => {
 
   const resetParams = () =>
     setParams({
-      revenue: 0,
-      liquidity: 0,
-      employment: 0,
-      wibor: 0,
-      energy: 0,
-      sentiment: 0,
+      revenue: 0, liquidity: 0, employment: 0,
+      wibor: 0, energy: 0, sentiment: 0,
     });
+    
+  const sectorName = PKD_NAMES[selectedPkd] || `Kod: ${selectedPkd}`;
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 pb-10">
-      {/* PANEL KONTROLNY (Lewa kolumna) */}
+      
+      {/* 1. PANEL KONTROLNY (Lewa kolumna) */}
       <div className="xl:col-span-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col h-full">
         <div className="mb-6 pb-6 border-b border-slate-100">
           <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
@@ -191,7 +190,7 @@ const SimulationView = ({ data }: { data: any[] }) => {
           >
             {pkdList.map((pkd) => (
               <option key={pkd} value={pkd}>
-                PKD {pkd}
+                {PKD_NAMES[pkd] || `PKD ${pkd}`}
               </option>
             ))}
           </select>
@@ -213,15 +212,17 @@ const SimulationView = ({ data }: { data: any[] }) => {
           <Slider label="Sentyment Google" val={params.sentiment} set={(v: number) => setParams({ ...params, sentiment: v })} min={-30} max={30} unit="pkt" color="blue" />
         </div>
 
-        <button onClick={resetParams} className="mt-6 flex items-center justify-center gap-2 w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold rounded-lg transition-colors">
+        <button onClick={resetParams} className="mt-6 flex items-center justify-center gap-2 w-full py-3 bg-slate-100 hover:bg-slate-200 text-pko-navy font-semibold rounded-lg transition-colors">
           <RotateCcw size={18} /> Resetuj Ustawienia
         </button>
       </div>
 
-      {/* DASHBOARD WYNIKÓW (Prawa kolumna) */}
+      {/* 2. DASHBOARD WYNIKÓW (Prawa kolumna) */}
       <div className="xl:col-span-8 flex flex-col gap-6">
         
         {/* KAFELKI WYNIKU */}
+        <h2 className="text-2xl font-bold text-slate-800">{sectorName} (PKD: {selectedPkd})</h2>
+
         <div className="grid grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10"><Play size={100} /></div>
@@ -286,9 +287,9 @@ const SimulationView = ({ data }: { data: any[] }) => {
   );
 };
 
-// --- KOMPONENT SLIDERA (Naprawione style kolorów) ---
+// --- KOMPONENT SUWAKA (Slider) ---
 const Slider = ({ label, val, set, min, max, step = 1, unit, color, desc }: any) => {
-    // Mapa kolorów - Tailwind nie lubi dynamicznych klas typu `bg-${color}-50`
+    // Mapa kolorów - bezpieczna dla Tailwind
     const colors: Record<string, any> = {
         green:   { text: 'text-green-600', bg: 'bg-green-50', accent: 'accent-green-600' },
         emerald: { text: 'text-emerald-600', bg: 'bg-emerald-50', accent: 'accent-emerald-600' },
@@ -322,4 +323,4 @@ const Slider = ({ label, val, set, min, max, step = 1, unit, color, desc }: any)
     );
 };
 
-export default SimulationPage;  
+export default SimulationPage;

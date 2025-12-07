@@ -25,6 +25,12 @@ interface IndustryData {
   data: ChartDataPoint[];
 }
 
+// Funkcja pomocnicza do czyszczenia daty ze spacji (dla bezpieczeństwa)
+const trimDate = (dateString: string | undefined): string => {
+    return dateString ? dateString.trim() : '';
+};
+
+
 const ChartsPage = () => {
   const [industries, setIndustries] = useState<IndustryData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -43,52 +49,59 @@ const ChartsPage = () => {
         const master = Papa.parse<RawData>(masterText, { header: true, skipEmptyLines: true }).data;
         const preds = Papa.parse<RawData>(predText, { header: true, skipEmptyLines: true }).data;
 
+        // Używamy funkcji parseRankValue z RankingPage dla spójności
+        const parseRankValue = (value: string | number | undefined): number => 
+            parseFloat(((value ?? 0) as string).toString().replace(',', '.'));
+
+
         // 1. Znajdź wszystkie unikalne kody PKD
-        // Używamy Set, żeby usunąć duplikaty i sortujemy, żeby były po kolei
-        const allPkds = Array.from(new Set(master.map(d => d.PKD_Code))).filter(Boolean).sort();
+        // Zapewniamy trim, aby uniknąć błędów formatowania w CSV
+        const allPkds = Array.from(new Set(master.map(d => trimDate(d.PKD_Code)))).filter(Boolean).sort();
 
         // 2. Przetwórz dane dla każdego PKD
         const processedData = allPkds.map(pkdCode => {
           // --- HISTORIA ---
           const historyData = master
-            .filter(d => d.PKD_Code === pkdCode)
+            .filter(d => trimDate(d.PKD_Code) === pkdCode)
             .map(d => ({
-              date: d.Date,
-              history: parseFloat((d.PKO_SCORE_FINAL || '0').replace(',', '.')),
+              date: trimDate(d.Date), // CZYŚCIMY DATY
+              history: parseRankValue(d.PKO_SCORE_FINAL),
               prediction: null
             }))
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
           const lastHistoryPoint = historyData[historyData.length - 1];
-          const lastDate = lastHistoryPoint ? new Date(lastHistoryPoint.date) : new Date();
+          const lastDate = lastHistoryPoint ? new Date(lastHistoryPoint.date) : new Date(0);
 
           // --- PREDYKCJA ---
           const predictionData = preds
-            .filter(d => d.PKD_Code === pkdCode)
-            // Bierzemy tylko daty nowsze niż historia
-            .filter(d => new Date(d.Date) > lastDate)
+            .filter(d => trimDate(d.PKD_Code) === pkdCode)
+            // Bierzemy tylko daty nowsze niż ostatnia historia
+            .filter(d => new Date(trimDate(d.Date)) > lastDate) 
             .map(d => ({
-              date: d.Date,
+              date: trimDate(d.Date), // CZYŚCIMY DATY
               history: null,
-              prediction: parseFloat((d.Predicted_Score || '0').replace(',', '.'))
+              prediction: parseRankValue(d.Predicted_Score)
             }))
             .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
           // --- FIX NA DZIURĘ (MOST) ---
           if (lastHistoryPoint) {
             predictionData.unshift({
-              date: lastHistoryPoint.date,
+              date: lastHistoryPoint.date, 
               history: null,
-              prediction: lastHistoryPoint.history // Start predykcji = koniec historii
+              prediction: lastHistoryPoint.history // START RED LINE HERE
             });
           }
 
           // Łączymy
           const combined = [...historyData, ...predictionData];
+          
+          const finalPkd = pkdCode === '1' ? '01' : pkdCode; // Poprawka PKD 1 vs 01 dla nazwy
 
           return {
-            pkdCode,
-            pkdName: PKD_NAMES[pkdCode] || `Branża ${pkdCode}`,
+            pkdCode: finalPkd,
+            pkdName: PKD_NAMES[finalPkd] || `Branża ${finalPkd}`,
             data: combined
           };
         });
@@ -118,7 +131,6 @@ const ChartsPage = () => {
           <div className="animate-spin h-10 w-10 border-4 border-pko-navy border-t-transparent rounded-full"></div>
         </div>
       ) : (
-        // Grid dostosowuje się do ekranu: 1 kolumna na telefonie, 2 na tablecie, 3 na dużym ekranie
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-10">
           {industries.map((industry) => (
             <div key={industry.pkdCode} className="bg-white p-4 rounded-xl shadow border border-gray-200 hover:shadow-md transition-shadow">
@@ -155,13 +167,13 @@ const ChartsPage = () => {
                     <Tooltip 
                       labelStyle={{ fontSize: '10px', color: '#666' }}
                       itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}
                     />
                     
-                    {/* Linia odniesienia "TERAZ" */}
+                    {/* Linia odniesienia "TERAZ" - ustawiona na 2024-06-01 (ostatni dzień historii) */}
                     <ReferenceLine x="2024-06-01" stroke="#ccc" strokeDasharray="3 3" />
                     
-                    {/* Historia */}
+                    {/* Historia (Niebieska Linia) */}
                     <Area 
                       type="monotone" 
                       dataKey="history" 
@@ -173,7 +185,7 @@ const ChartsPage = () => {
                       connectNulls={true}
                     />
                     
-                    {/* Predykcja */}
+                    {/* Predykcja (Czerwona Linia) */}
                     <Area 
                       type="monotone" 
                       dataKey="prediction" 
@@ -182,7 +194,7 @@ const ChartsPage = () => {
                       strokeDasharray="3 3" 
                       fill="transparent" 
                       name="Prognoza AI"
-                      connectNulls={true}
+                      connectNulls={true} // KLUCZOWE: Łączy punkty nawet jeśli są null
                     />
                   </AreaChart>
                 </ResponsiveContainer>

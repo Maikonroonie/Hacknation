@@ -5,6 +5,7 @@ import type { MasterRecord, PredictionRecord, IndustrySummary } from '../types';
 // Słownik nazw branż (na podstawie Twoich danych)
 export const PKD_NAMES: Record<string, string> = {
   "1": "Rolnictwo i uprawy",
+  "01": "Rolnictwo i uprawy",
   "10": "Produkcja spożywcza",
   "16": "Produkcja wyrobów z drewna",
   "23": "Produkcja z surowców niemetalicznych",
