@@ -9,7 +9,7 @@ import SimulationPage from './pages/SimulationPage';
 
 /*function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter>`
       <Routes>
         <Route path="/" element={<RankingPage />} />
         <Route path="/industry/:pkdId" element={<IndustryPage />} />
