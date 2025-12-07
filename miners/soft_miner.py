@@ -3,76 +3,74 @@ import requests
 import os
 import io
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
+import warnings
 
-
+# -------------------- Ścieżki i konfiguracja --------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__)) 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR)) 
-
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "Hacknation",'my-react-app','public', "data", "processed")
-OUTPUT_FILE = "soft_data.csv"
+OUTPUT_FILE = "soft_data_gdelt.csv"
 
 FRED_OIL_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILBRENTEU"
 
-PKD_LIST = [
-    "PKD_01", "PKD_10", "PKD_16", "PKD_23", "PKD_24", 
-    "PKD_29", "PKD_31", "PKD_35", "PKD_41", "PKD_46", 
-    "PKD_47", "PKD_49", "PKD_55", "PKD_62", "PKD_68"
-]
+PKD_KEYWORDS = {
+    "PKD_01": ["rolnictwo", "plony", "ceny zboża"], 
+    "PKD_10": ["spożywczy", "przetwórstwo", "ceny żywności"], 
+    "PKD_16": ["drewno", "tartak", "meble"], 
+    "PKD_23": ["ceramika", "cement", "szkło budowlane"], 
+    "PKD_24": ["stal", "metalurgia", "ceny metali"], 
+    "PKD_29": ["motoryzacja", "części samochodowe"], 
+    "PKD_31": ["producent mebli", "sprzedaż mebli"], 
+    "PKD_35": ["energetyka", "cena gazu", "węgiel", "OZE"], 
+    "PKD_41": ["budowa", "deweloper", "nowe mieszkania", "materiały budowlane"], 
+    "PKD_46": ["handel hurtowy", "dystrybucja"], 
+    "PKD_47": ["handel detaliczny", "sklep internetowy"], 
+    "PKD_49": ["transport", "spedycja", "logistyka"], 
+    "PKD_55": ["hotelarstwo", "turystyka", "noclegi"], 
+    "PKD_62": ["usługi IT", "programista", "sztuczna inteligencja"], 
+    "PKD_68": ["nieruchomości", "wynajem", "rynek wtórny"]
+}
 
-risk_sensitivity = {
-        'PKD_41': {'wibor': 1.0, 'energy': 0.3}, # Budowlanka
-        'PKD_68': {'wibor': 1.0, 'energy': 0.2}, # Nieruchomości
-        'PKD_24': {'wibor': 0.4, 'energy': 1.0}, # Metale
-        'PKD_35': {'wibor': 0.3, 'energy': -0.5},# Energetyka
-        'PKD_49': {'wibor': 0.5, 'energy': 0.9}, # Transport
-        'PKD_10': {'wibor': 0.4, 'energy': 0.6}, # Spożywka
-        'PKD_62': {'wibor': 0.1, 'energy': 0.1}, # IT
-        'default': {'wibor': 0.5, 'energy': 0.5}
-    }
+# -------------------- Funkcje pomocnicze --------------------
+
 def fetch_oil_history():
     try:
         response = requests.get(FRED_OIL_URL, timeout=10)
         response.raise_for_status()
         content = response.content.decode('utf-8')
-        
         df = pd.read_csv(io.StringIO(content))
         df.columns = ['Data', 'Oil_USD']
-        
         df = df[df['Oil_USD'] != '.']
         df['Oil_USD'] = pd.to_numeric(df['Oil_USD'])
         df['Data'] = pd.to_datetime(df['Data'])
-        
         return df
-    except Exception as e:
+    except Exception:
         dates = pd.date_range(start='2020-01-01', end=datetime.now(), freq='D')
         return pd.DataFrame({'Data': dates, 'Oil_USD': 65.0})
-    
 
 def fetch_nbp_history(table, code, column_name, start_year=2020):
     all_data = []
     current_year = datetime.now().year
-    
     for year in range(start_year, current_year + 1):
         start_date = f"{year}-01-01"
         end_date = f"{year}-12-31"
         if year == current_year:
             end_date = datetime.now().strftime("%Y-%m-%d")
-            
         url = f"http://api.nbp.pl/api/cenyzlota/{start_date}/{end_date}/?format=json" if code == 'gold' \
               else f"http://api.nbp.pl/api/exchangerates/rates/{table}/{code}/{start_date}/{end_date}/?format=json"
-        
         try:
             response = requests.get(url)
             if response.status_code == 200:
                 data = response.json()
-                # Prosta pętla tylko po kursach walut
                 for rate in data['rates']:
                     all_data.append({
                         'Data': rate['effectiveDate'], 
                         column_name: rate['mid']
                     })
-        except: pass         
+        except: 
+            pass         
     return pd.DataFrame(all_data)
 
 def generate_interest_rates():
@@ -83,57 +81,98 @@ def generate_interest_rates():
     ]
     df = pd.DataFrame(rates_history, columns=['Data', 'Stopa_Ref'])
     df['Data'] = pd.to_datetime(df['Data'])
-    
     full_range = pd.date_range(start='2020-01-01', end=datetime.now(), freq='D')
     df = df.set_index('Data').reindex(full_range).ffill().reset_index()
     df.rename(columns={'index': 'Data'}, inplace=True)
     df['Stopa_Ref'] = df['Stopa_Ref'].bfill()
     return df
 
+# -------------------- Funkcje GDELT --------------------
 
-def calculate_metrics(master_df, pkd_list):
-    df = master_df.copy()
-    
-    if 'Oil_USD' in df.columns:
-        df['Cena_Paliwa'] = df['Oil_USD'] * df['Kurs_USD']
+def fetch_gdelt_for_pkd(pkd_code, keywords, date_range):
+    from gdelt import gdelt
+    import pandas as pd
+    gd = gdelt(version=2)
+    try:
+        results = gd.Search(date_range, table="gkg", output="df", coverage=False)
+    except:
+        return pd.DataFrame()
+    if results is None or results.empty:
+        return pd.DataFrame()
+
+    results["match"] = results["V2Themes"].fillna("").apply(
+        lambda x: any(k.lower() in x.lower() for k in keywords)
+    )
+    filtered = results[results["match"]].copy()
+    if filtered.empty:
+        return pd.DataFrame()
+
+    filtered["Kod_PKD"] = pkd_code
+
+    # obsługa różnych formatów dat
+    def parse_date(x):
+        x = str(x)
+        if len(x) == 8:
+            return pd.to_datetime(x, format="%Y%m%d")
+        elif len(x) == 14:
+            return pd.to_datetime(x, format="%Y%m%d%H%M%S")
+        else:
+            return pd.NaT
+    if "DATEADDED" in filtered.columns:
+        filtered["Data"] = pd.to_datetime(filtered["DATEADDED"], format="%Y%m%d%H%M%S", errors='coerce')
+    elif "DATE" in filtered.columns:
+        filtered["Data"] = filtered["DATE"].apply(parse_date)
     else:
-        df['Cena_Paliwa'] = 65.0 * df['Kurs_USD']
-    df['Delta_WIBOR'] = df['Stopa_Ref'].diff(4).fillna(0)
-    df['Delta_Energy'] = df['Cena_Paliwa'].diff(4).fillna(0)
+        filtered["Data"] = pd.NaT
 
-    final_dfs = []
+    # V2Tone na float
+    filtered['V2Tone'] = pd.to_numeric(filtered['V2Tone'], errors='coerce')
 
-    for pkd in pkd_list:
-        weights = risk_sensitivity.get(pkd, risk_sensitivity['default'])
-        w_wibor = weights.get('wibor', 0.5)
-        w_energy = weights.get('energy', 0.5)      
+    return filtered
 
-        sector_df = df.copy()
-        sector_df['Kod_PKD'] = pkd
- 
-        risk_impulse = (sector_df['Delta_WIBOR'] * w_wibor) + (sector_df['Delta_Energy'] * w_energy)
-        
-        sector_df['News_Sentiment'] = (-1 * risk_impulse / 5).clip(-1, 1)
+def fetch_gdelt_sentiment(PKD_KEYWORDS, days_back=60):
+    from datetime import datetime, timedelta
+    import pandas as pd
 
-        raw_trend = 50 + (risk_impulse * 5)
-        
-        noise = np.random.normal(0, 4, len(sector_df))
-        raw_trend = raw_trend + noise
-        
-        sector_df['Google_Trend_Score'] = raw_trend.rolling(window=4, min_periods=1).mean()
-        
-        sector_df['Google_Trend_Score'] = sector_df['Google_Trend_Score'].clip(10, 100)
-        sector_df['WIBOR'] = sector_df['Stopa_Ref']
-        
-        cols = ['Data', 'Kod_PKD', 'Google_Trend_Score', 'WIBOR', 'Cena_Paliwa']
-        final_dfs.append(sector_df[cols])
+    warnings.filterwarnings("ignore", category=UserWarning)
 
-    return pd.concat(final_dfs)
+    end_date = datetime.utcnow() - timedelta(days=1)
+    start_date = end_date - timedelta(days=days_back)
+
+    # dzielimy na batch 7-dniowe
+    batch_size = 7
+    date_batches = []
+    current_start = start_date
+    while current_start <= end_date:
+        current_end = min(current_start + timedelta(days=batch_size - 1), end_date)
+        date_batches.append(pd.date_range(current_start, current_end).strftime('%Y%m%d').tolist())
+        current_start = current_end + timedelta(days=1)
+
+    all_results = []
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for batch in date_batches:
+            futures = [executor.submit(fetch_gdelt_for_pkd, pkd, kws, batch)
+                       for pkd, kws in PKD_KEYWORDS.items()]
+            for future in futures:
+                df = future.result()
+                if not df.empty:
+                    all_results.append(df)
+
+    if not all_results:
+        return pd.DataFrame()
+
+    final_df = pd.concat(all_results, ignore_index=True)
+    final_df = final_df[["Kod_PKD", "Data", "GKGRECORDID", "DocumentIdentifier", "V2Tone", "V2Themes"]]
+    final_df.rename(columns={'V2Tone': 'Google_Trend_Score'}, inplace=True)
+
+    return final_df
+
+# -------------------- MAIN --------------------
 
 def main():
     if not os.path.exists(OUTPUT_DIR):
-        try: os.makedirs(OUTPUT_DIR)
-        except: pass
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     oil_df = fetch_oil_history()
     usd_df = fetch_nbp_history('A', 'USD', 'Kurs_USD', start_year=2020)
@@ -143,20 +182,33 @@ def main():
         return
 
     usd_df['Data'] = pd.to_datetime(usd_df['Data'])
-    
     master_df = pd.merge(usd_df, rates_df, on='Data', how='left')
     master_df = pd.merge(master_df, oil_df, on='Data', how='left') 
-    
     master_df = master_df.sort_values('Data').ffill().dropna()
+    master_weekly_df = master_df.set_index('Data').resample('W').mean().reset_index()
 
-    master_df = master_df.set_index('Data').resample('W').mean().reset_index()
+    sentiment_df = fetch_gdelt_sentiment(PKD_KEYWORDS, days_back=60)
+    if sentiment_df.empty:
+        return
 
-    final_df = calculate_metrics(master_df, PKD_LIST)
-    
-    final_df = final_df.sort_values(by=['Data', 'Kod_PKD'])
+    sentiment_weekly_df = sentiment_df.set_index('Data').groupby('Kod_PKD').resample('W')['Google_Trend_Score'].mean().reset_index()
+
+    final_df = pd.merge(
+        sentiment_weekly_df,
+        master_weekly_df[['Data', 'Stopa_Ref', 'Kurs_USD', 'Oil_USD']],
+        on='Data',
+        how='left'
+    ).dropna()
+
+    final_df['WIBOR'] = final_df['Stopa_Ref']
+    final_df['Cena_Paliwa'] = final_df['Oil_USD'] * final_df['Kurs_USD']
+
+    cols = ['Data', 'Kod_PKD', 'Google_Trend_Score', 'WIBOR', 'Cena_Paliwa']
+    final_df = final_df[cols]
 
     full_path = os.path.join(OUTPUT_DIR, OUTPUT_FILE)
     final_df.to_csv(full_path, index=False)
+    print(f"Dane zapisane do {full_path}")
 
 if __name__ == "__main__":
     main()
