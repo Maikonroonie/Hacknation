@@ -24,7 +24,7 @@ const Header = () => {
         {/* 2. NAWIGACJA */}
         <nav className="hidden md:flex items-center gap-1 p-1.5 bg-gray-100/50 border border-gray-200/60 rounded-full absolute left-1/2 -translate-x-1/2 backdrop-blur-sm shadow-sm transition-all hover:shadow-md duration-300">
           <NavLink to="/" current={location.pathname} label="Ranking" />
-          <NavLink to="/graphs" current={location.pathname} label="Grafy" />
+          <NavLink to="/graphs" current={location.pathname} label="Relacje" />
           <NavLink to="/charts" current={location.pathname} label="Wykresy" />
           <NavLink
             to="/simulation"
