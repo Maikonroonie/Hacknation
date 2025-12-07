@@ -7,7 +7,7 @@ import os
 USE_MOCK_DATA = False
 
 
-# Zakładamy, że skrypt jest w folderze Hacknation/data/processors/
+# skrypt jest w folderze Hacknation/data/processors/
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Używamy plików z końcówką v2
@@ -20,7 +20,7 @@ KEY_INDUSTRIES = ['01', '10', '16', '23', '24', '29', '31', '35', '41', '46', '4
 
 def generate_full_mock_data():
     """Plan B: Generuje kompletny zestaw danych (Hard + Soft) z powietrza."""
-    print("⚠️ TRYB MOCK: Generowanie danych sztucznych...")
+    print(" TRYB MOCK: Generowanie danych sztucznych...")
     dates = pd.date_range(start='2020-01-01', periods=54, freq='MS')
     
     mock_data = []
@@ -48,10 +48,10 @@ def generate_full_mock_data():
 
 def load_real_data():
     """Wczytuje rozszerzone dane twarde i łączy z miękkimi."""
-    print("📂 TRYB REAL: Wczytywanie danych...")
+    print(" TRYB REAL: Wczytywanie danych...")
     
     if not os.path.exists(PATH_HARD) or not os.path.exists(PATH_SOFT):
-        print(f"❌ BŁĄD: Brakuje plików! Sprawdź czy masz {PATH_HARD} i {PATH_SOFT}")
+        print(f" BŁĄD: Brakuje plików! Sprawdź czy masz {PATH_HARD} i {PATH_SOFT}")
         return generate_full_mock_data()
 
     try:
@@ -92,17 +92,17 @@ def load_real_data():
         df_soft_monthly = df_soft.groupby(groupers)[numeric_cols].mean().reset_index()
         
         # --- 3. Merge ---
-        print("   -> Łączenie tabel...")
+        print("  -> Łączenie tabel...")
         master_df = pd.merge(df_hard_monthly, df_soft_monthly, on=['Date', 'PKD_Code'], how='inner')
         master_df = master_df.fillna(0)
         return master_df
 
     except Exception as e:
-        print(f"❌ Wyjątek w ETL: {e}")
+        print(f" Wyjątek w ETL: {e}")
         return generate_full_mock_data()
 
 def calculate_index(df):
-    print("⚙️ Przeliczanie Algorytmu PKO FutureIndex V8.0 (z Rankingami)...")
+    print(" Przeliczanie Algorytmu PKO FutureIndex V8.0 (z Rankingami)...")
     df = df.sort_values(['PKD_Code', 'Date'])
     
     # --- 1. INŻYNIERIA CECH ---
@@ -185,10 +185,9 @@ def calculate_index(df):
     
     df['PKO_SCORE_FINAL'] = scaler.fit_transform(df[['PKO_SCORE']])
 
-    # -------------------------------------------------------------------------
+    
     # --- 6. RANKING ENGINE ---
-    # -------------------------------------------------------------------------
-    print("📊 Obliczanie wskaźników rankingowych...")
+    print("Obliczanie wskaźników rankingowych...")
 
     # a. Liderzy Wzrostu
     df['Rank_Growth'] = df['Norm_Growth']

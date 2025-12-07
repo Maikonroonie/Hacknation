@@ -6,7 +6,7 @@ const Header = () => {
   return (
     <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 transition-all duration-300">
       <div className="container mx-auto px-6 h-20 flex items-center justify-between relative">
-        {/* 1. LOGO - Z dodaną płynną animacją */}
+        {/* 1. LOGO  */}
         <Link to="/" className="flex items-center gap-3 group">
           <div className="w-10 h-10 bg-pko-navy text-white flex items-center justify-center font-bold text-xl rounded-xl shadow-sm group-hover:bg-pko-red group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 ease-out">
             PKO
@@ -33,7 +33,7 @@ const Header = () => {
           />
         </nav>
 
-        {/* 3. PUSTA PRAWA STRONA (z zachowaniem miejsca) */}
+        {/* 3. PUSTA PRAWA STRONA */}
         <div className="w-[120px] flex justify-end items-center gap-4 opacity-0 md:opacity-100 transition-opacity duration-500">
           <span className="text-xs font-mono text-gray-300 border border-gray-200 px-2 py-1 rounded-md"></span>
         </div>
