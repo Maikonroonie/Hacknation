@@ -55,3 +55,13 @@ Aby upewnić się, że nasz "Indeks Branż" jest wiarygodny, przeprowadziliśmy 
 
 ## Kontekst wdrożeniowy
 Program został zaprojektowany tak, aby działać w sposób ciągły. Aplikacja może cyklicznie zaciągać nowe dane (np. po publikacji raportów kwartalnych GUS lub zmianie stóp procentowych) i automatycznie odświeżać ranking, dając analitykom bieżący obraz ryzyka i szans w poszczególnych sektorach.
+
+## Preview
+
+![1](assets/1.png)
+
+![2](assets/2.png)
+
+![3](assets/3.png)
+
+![4](assets/4.png)
